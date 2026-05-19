@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 23 - The Monolith</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #fff; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #000; z-index: 10; font-size: 1.2rem; 
+            pointer-events: none; font-weight: bold;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 3rem; z-index: 100; color: #000; background: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 23: THE PETRIFIED FOREST<br>OBJECTIVE: ENTER THE DARK PILLAR</div>
+    <div id="death">BLINDED BY THE ASH</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+        scene.fog = new THREE.Fog(0xffffff, 1, 160);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const walls = [];
+        let isEnding = false;
+
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x111111 }); 
+        const monolithMat = new THREE.MeshBasicMaterial({ color: 0x000000 }); 
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+
+        // Function to create trees/pillars
+        function addTrunk(w, h, x, z, isGoal = false) {
+            const geo = new THREE.CylinderGeometry(w, w, h, 8);
+            const m = new THREE.Mesh(geo, isGoal ? monolithMat : trunkMat);
+            m.position.set(x, h/2, z);
+            scene.add(m);
+            if (!isGoal) {
+                walls.push(new THREE.Box3().setFromObject(m));
+            }
+            return m;
+        }
+
+        // Invisible walls to keep you in the forest
+        function addBound(w, h, d, x, z) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), trunkMat);
+            m.position.set(x, h/2, z);
+            scene.add(m);
+            walls.push(new THREE.Box3().setFromObject(m));
+        }
+        addBound(1200, 100, 20, 0, 600); addBound(1200, 100, 20, 0, -600);
+        addBound(20, 100, 1200, 600, 0); addBound(20, 100, 1200, -600, 0);
+
+        // Generate the Forest
+        for(let i=-18; i<=18; i++) {
+            for(let j=-18; j<=18; j++) {
+                if(Math.abs(i)<4 && Math.abs(j)<4) continue;
+                if(Math.random() > 0.88) {
+                    addTrunk(1.8, 65, i*30, j*30);
+                }
+            }
+        }
+
+        // THE DARK PILLAR (The Exit)
+        const goalPos = { x: (Math.random()-0.5)*900, z: (Math.random()-0.5)*900 };
+        const monolith = addTrunk(18, 900, goalPos.x, goalPos.z, true);
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(2500, 2500), floorMat);
+        floor.rotation.x = -Math.PI/2; scene.add(floor);
+
+        // Monster (The Faceling)
+        const monster = new THREE.Group();
+        monster.add(new THREE.Mesh(new THREE.BoxGeometry(4, 30, 4), new THREE.MeshBasicMaterial({color: 0x000000, wireframe: true})));
+        monster.position.set(120, 15, 120);
+        scene.add(monster);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+        camera.position.set(0, 12, 0);
+        const keys = {};
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isEnding) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function checkCollision(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(4, 4, 4));
+            for(let w of walls) if(pBox.intersectsBox(w)) return true;
+            return false;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            // Movement Logic
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+            if (move.length() > 0) {
+                move.applyQuaternion(camera.quaternion);
+                move.y = 0;
+                move.normalize().multiplyScalar(keys.ShiftLeft ? 2.8 : 1.6);
+                const nX = camera.position.clone().add(new THREE.Vector3(move.x, 0, 0));
+                if (!checkCollision(nX)) camera.position.x = nX.x;
+                const nZ = camera.position.clone().add(new THREE.Vector3(0, 0, move.z));
+                if (!checkCollision(nZ)) camera.position.z = nZ.z;
+            }
+
+            // --- CRITICAL TELEPORT CHECK ---
+            // We use Vector2 to ignore the 'Y' height entirely.
+            const pPos2D = new THREE.Vector2(camera.position.x, camera.position.z);
+            const mPos2D = new THREE.Vector2(monolith.position.x, monolith.position.z);
+            
+            if (pPos2D.distanceTo(mPos2D) < 25) { 
+                isEnding = true;
+                window.location.href = "level24.html";
+                return;
+            }
+
+            // Monster Chase (Simplified LOS)
+            const dist = monster.position.distanceTo(camera.position);
+            if (dist < 300) {
+                monster.position.add(new THREE.Vector3().subVectors(camera.position, monster.position).normalize().multiplyScalar(1.2));
+                monster.lookAt(camera.position.x, 15, camera.position.z);
+            }
+
+            if (dist < 18) {
+                isEnding = true;
+                document.getElementById('death').style.display = 'flex';
+                setTimeout(() => location.reload(), 1500);
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

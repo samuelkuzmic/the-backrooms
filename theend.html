@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The End</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000;
+            display: flex; justify-content: center; align-items: center; overflow: hidden; font-family: 'Courier New', monospace;
+        }
+        .container { display: flex; flex-direction: column; align-items: center; gap: 15px; text-align: center; }
+        #message, #sub-message, #credit-message { color: #888888; text-transform: uppercase; user-select: none; opacity: 0; animation: fadeIn 4s ease-in forwards; }
+        #message { font-size: 2.2rem; letter-spacing: 5px; }
+        #sub-message { font-size: 1.3rem; letter-spacing: 3px; animation-delay: 2s; }
+        #credit-message { font-size: 1rem; letter-spacing: 2px; margin-top: 25px; color: #666666; animation-delay: 5s; }
+        @keyframes fadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="message">YOU HAVE ESCAPED THE BACKROOMS</div>
+        <div id="sub-message">THERE MIGHT BE MORE LEVELS IN THE FUTURE</div>
+        <div id="credit-message">TOOK ABOUT 40 HOURS TO MAKE</div>
+    </div>
+    <script>
+        window.onload = function() {
+            if (window.parent && typeof window.parent.stopSpeedrunTimer === 'function') {
+                window.parent.stopSpeedrunTimer();
+            }
+        };
+    </script>
+</body>
+</html>

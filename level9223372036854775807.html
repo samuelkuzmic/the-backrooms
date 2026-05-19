@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level - 9223372036854775807</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #fff; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #888888; z-index: 10; font-weight: bold; 
+            pointer-events: none;
+        }
+        .gui-line { font-size: 1.25rem; text-transform: uppercase; margin-bottom: 2px; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="gui-line">LEVEL - 9223372036854775807</div>
+        <div class="gui-line">ASCEND TO THE END</div>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 25000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, side: THREE.BackSide });
+        const stepMat = new THREE.MeshStandardMaterial({ color: 0x999999 });
+        const grassMat = new THREE.MeshStandardMaterial({ color: 0x22ff22 });
+
+        // --- SHAFT & PILLAR ---
+        const shaft = new THREE.Mesh(new THREE.BoxGeometry(800, 40000, 800), wallMat);
+        shaft.position.y = 20000;
+        scene.add(shaft);
+
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(30, 30, 40000, 16), stepMat);
+        pillar.position.y = 20000;
+        scene.add(pillar);
+
+        // --- THE SAFETY FLOOR (NO VOID) ---
+        const floorBase = new THREE.Mesh(new THREE.BoxGeometry(800, 10, 800), stepMat);
+        floorBase.position.y = -5;
+        scene.add(floorBase);
+
+        // --- THE STAIRCASE ---
+        const stairGroup = new THREE.Group();
+        const stepHeight = 7;
+        const radius = 300;
+        for (let i = 0; i < 5000; i++) {
+            const step = new THREE.Mesh(new THREE.BoxGeometry(radius, 12, 60), stepMat);
+            const angle = i * 0.14;
+            step.position.set(Math.cos(angle) * (radius/2.5), (i * stepHeight) + 10, Math.sin(angle) * (radius/2.5));
+            step.rotation.y = -angle;
+            stairGroup.add(step);
+        }
+        scene.add(stairGroup);
+
+        // --- THE GRASS (LEVEL 94) ---
+        const topY = 94 * 180;
+        const grassField = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), grassMat);
+        grassField.rotation.x = -Math.PI/2;
+        grassField.position.y = topY;
+        scene.add(grassField);
+
+        // --- LIGHTING ---
+        scene.add(new THREE.AmbientLight(0xffffff, 2.5));
+        const pLight = new THREE.PointLight(0xffffff, 20000, 5000);
+        scene.add(pLight);
+
+        // --- PLAYER STATE ---
+        camera.position.set(100, 45, 100);
+        const keys = {};
+        let velocityY = 0;
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        const raycaster = new THREE.Raycaster();
+        const downVec = new THREE.Vector3(0, -1, 0);
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Sprint/Movement
+            const speed = (keys['ShiftLeft'] || keys['ShiftRight'] ? 5.0 : 2.5);
+            const input = new THREE.Vector3();
+            if(keys.KeyW) input.z -= 1; if(keys.KeyS) input.z += 1;
+            if(keys.KeyA) input.x -= 1; if(keys.KeyD) input.x += 1;
+
+            if (input.length() > 0) {
+                input.normalize().applyQuaternion(camera.quaternion);
+                input.y = 0;
+                const nextX = camera.position.x + input.x * speed;
+                const nextZ = camera.position.z + input.z * speed;
+                // Wall bounds
+                if (Math.abs(nextX) < 380) camera.position.x = nextX;
+                if (Math.abs(nextZ) < 380) camera.position.z = nextZ;
+            }
+
+            // Gravity & Collision
+            raycaster.set(camera.position, downVec);
+            const groundObjs = [stairGroup, floorBase, grassField];
+            const intersects = raycaster.intersectObjects(groundObjs, true);
+
+            if (intersects.length > 0) {
+                const groundY = intersects[0].point.y;
+                const dist = camera.position.y - groundY;
+
+                // Grass touch teleport
+                if (intersects[0].object === grassField && dist < 50) {
+                    window.location.href = "theend.html";
+                }
+
+                if (dist < 40) {
+                    camera.position.y = groundY + 40;
+                    velocityY = 0;
+                } else {
+                    velocityY -= 0.15; // Lighter gravity for smoother descent
+                    camera.position.y += velocityY;
+                }
+            } else {
+                // Failsafe: Reset to floor if somehow outside bounds
+                if (camera.position.y < 0) camera.position.y = 45;
+            }
+
+            pLight.position.copy(camera.position);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

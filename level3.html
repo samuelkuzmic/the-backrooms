@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Backrooms - Level 3</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; cursor: none; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #fb0; font-family: 'Courier New', monospace; 
+            pointer-events: none; z-index: 100; text-shadow: 2px 2px #000;
+        }
+        #counter {
+            position: absolute; bottom: 20px; right: 20px;
+            color: #0f0; font-family: 'Courier New', monospace;
+            font-size: 24px; text-shadow: 2px 2px #000;
+        }
+        #death-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; display: none; z-index: 1000;
+            color: #ff0000; font-family: 'Courier New', monospace;
+            align-items: center; justify-content: center;
+            font-size: 3rem; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 3 - ELECTRICAL STATION<br>3 HOUNDS DETECTED | DON'T STOP RUNNING</div>
+    <div id="counter">GENERATORS: <span id="genCount">0</span>/3</div>
+    <div id="death-screen">CAUGHT</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const collidables = [];
+        const generators = [];
+        const hounds = [];
+        let activated = 0;
+        let isDead = false;
+
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.8 });
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const panelRed = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000 });
+        const panelGreen = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00 });
+        const houndMat = new THREE.MeshBasicMaterial({ color: 0x221111, wireframe: true });
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+        const flashlight = new THREE.PointLight(0xffffff, 45, 20);
+        scene.add(flashlight);
+
+        function addWall(x, z, w, d) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, 5, d), wallMat);
+            m.position.set(x, 2.5, z);
+            scene.add(m);
+            const box = new THREE.Box3();
+            collidables.push({ mesh: m, box: box });
+        }
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), floorMat);
+        floor.rotation.x = -Math.PI/2;
+        scene.add(floor);
+
+        for(let z = -100; z <= 100; z += 10) {
+            if (Math.abs(z - (-60)) > 5 && Math.abs(z - 0) > 5 && Math.abs(z - 60) > 5) {
+                addWall(-6, z, 1, 10); 
+                addWall(6, z, 1, 10);  
+            } else {
+                if (z === 0) addWall(6, z, 1, 10); 
+                if (z === -60 || z === 60) addWall(-6, z, 1, 10); 
+            }
+        }
+
+        addWall(0, 105, 13, 1);
+        addWall(0, -105, 13, 1);
+
+        function createRoom(zPos, side) {
+            const x = side * 15;
+            addWall(x, zPos + 8, 20, 1); 
+            addWall(x, zPos - 8, 20, 1); 
+            addWall(x + (side * 10), zPos, 1, 17); 
+            
+            const gBody = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), wallMat);
+            gBody.position.set(x, 1.5, zPos);
+            scene.add(gBody);
+            collidables.push({ mesh: gBody, box: new THREE.Box3() });
+
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.2), panelRed);
+            panel.position.set(x, 2, zPos + (side === 1 ? -1.51 : 1.51));
+            scene.add(panel);
+
+            generators.push({ pos: new THREE.Vector3(x, 0, zPos), panel: panel, active: false });
+
+            const p = new THREE.PointLight(0xffffee, 80, 20);
+            p.position.set(x, 4, zPos);
+            scene.add(p);
+        }
+
+        createRoom(-60, 1); 
+        createRoom(0, -1);  
+        createRoom(60, 1);  
+
+        for(let z = -90; z <= 90; z += 30) {
+            const p = new THREE.PointLight(0xffffff, 40, 20);
+            p.position.set(0, 4, z);
+            scene.add(p);
+        }
+
+        // --- RANDOM HOUND SPAWNING (3 TOTAL, AWAY FROM PLAYER) ---
+        const startZ = 95;
+        const potentialZ = [-80, -40, -10, 20, 50]; 
+        let houndsSpawned = 0;
+        
+        potentialZ.sort(() => Math.random() - 0.5); // Shuffle
+        
+        for(let z of potentialZ) {
+            if (houndsSpawned < 3 && Math.abs(z - startZ) > 40) {
+                const h = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 2.5), houndMat);
+                h.position.set((Math.random() - 0.5) * 8, 0.4, z);
+                scene.add(h);
+                hounds.push(h);
+                houndsSpawned++;
+            }
+        }
+
+        function die() {
+            if (isDead) return;
+            isDead = true;
+            document.getElementById('death-screen').style.display = 'flex';
+            setTimeout(() => location.reload(), 1500);
+        }
+
+        let yaw = 0, pitch = 0;
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isDead) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-1.4, Math.min(1.4, pitch));
+                camera.rotation.set(pitch, yaw, 0, 'YXZ');
+            }
+        });
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        camera.position.set(0, 1.7, 95);
+        const playerBox = new THREE.Box3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isDead) return;
+
+            if (document.pointerLockElement) {
+                const speed = keys.ShiftLeft ? 0.3 : 0.15;
+                if (keys.KeyW) camera.translateZ(-speed);
+                if (keys.KeyS) camera.translateZ(speed);
+                if (keys.KeyA) camera.translateX(-speed);
+                if (keys.KeyD) camera.translateX(speed);
+                camera.position.y = 1.7;
+
+                playerBox.setFromCenterAndSize(camera.position, new THREE.Vector3(0.8, 1.7, 0.8));
+                for (let item of collidables) {
+                    item.box.setFromObject(item.mesh);
+                    if (playerBox.intersectsBox(item.box)) {
+                        const overlap = new THREE.Vector3();
+                        const dx = Math.min(playerBox.max.x - item.box.min.x, item.box.max.x - playerBox.min.x);
+                        const dz = Math.min(playerBox.max.z - item.box.min.z, item.box.max.z - playerBox.min.z);
+                        if (dx < dz) {
+                            camera.position.x += (playerBox.max.x - item.box.min.x < item.box.max.x - playerBox.min.x) ? -dx : dx;
+                        } else {
+                            camera.position.z += (playerBox.max.z - item.box.min.z < item.box.max.z - playerBox.min.z) ? -dz : dz;
+                        }
+                    }
+                }
+            }
+            flashlight.position.copy(camera.position);
+
+            // --- HOUNDS AI (FAST & LETHAL) ---
+            hounds.forEach(h => {
+                const distToHound = camera.position.distanceTo(h.position);
+                if (distToHound < 60) {
+                    // 0.32 speed makes it faster than player's 0.3 sprint
+                    const houndSpeed = distToHound < 30 ? 0.32 : 0.15;
+                    const dir = new THREE.Vector3().subVectors(camera.position, h.position).normalize();
+                    h.position.x += dir.x * houndSpeed;
+                    h.position.z += dir.z * houndSpeed;
+                    h.lookAt(camera.position.x, 0.4, camera.position.z);
+                }
+                if (distToHound < 1.6) die();
+            });
+
+            generators.forEach(g => {
+                if (!g.active && camera.position.distanceTo(g.pos) < 4) {
+                    g.active = true;
+                    g.panel.material = panelGreen;
+                    activated++;
+                    document.getElementById('genCount').innerText = activated;
+                    if (activated >= 3) window.location.href = "level4.html";
+                }
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

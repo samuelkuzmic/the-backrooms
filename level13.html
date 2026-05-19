@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 13 - The Apartments</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            color: #ffd700; 
+            z-index: 10; 
+            pointer-events: none; 
+            text-shadow: 2px 2px #000; 
+            font-size: 1rem; 
+        }
+        #objective { 
+            margin-top: 5px;
+            color: #ffd700; 
+        }
+        #overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 2rem; z-index: 100; color: #f00; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        LEVEL 13 - THE APARTMENTS
+        <div id="objective">FIND THE RED DOOR</div>
+    </div>
+    <div id="overlay"></div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a05);
+        scene.fog = new THREE.Fog(0x0a0a05, 1, 400);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x5c4a33 });
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a130d });
+
+        const walls = [];
+        function createWall(x, y, z, w, h, d) {
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            wall.position.set(x, y, z);
+            scene.add(wall);
+            walls.push(new THREE.Box3().setFromObject(wall));
+        }
+
+        const roomCount = 25;
+        const roomSize = 80;
+        const totalDepth = roomCount * roomSize;
+        
+        // Random exit placement
+        const exitIdx = Math.floor(Math.random() * (roomCount - 4)) + 2; 
+        const exitSide = Math.random() > 0.5 ? 1 : -1;
+
+        // FLOOR & ROOF
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(300, totalDepth + 200), floorMat);
+        floor.rotation.x = -Math.PI/2; floor.position.z = -totalDepth/2; scene.add(floor);
+        const roof = new THREE.Mesh(new THREE.PlaneGeometry(300, totalDepth + 200), wallMat);
+        roof.rotation.x = Math.PI/2; roof.position.set(0, 20, -totalDepth/2); scene.add(roof);
+
+        // SIDE WALLS - Now solid with no gaps
+        createWall(-85, 10, -totalDepth/2, 10, 35, totalDepth + 50); // Continuous Left Wall
+        createWall(85, 10, -totalDepth/2, 10, 35, totalDepth + 50);  // Continuous Right Wall
+
+        // SEALED ENDS
+        createWall(0, 10, 5, 180, 35, 10); 
+        createWall(0, 10, -totalDepth - 5, 180, 35, 10); 
+
+        for (let i = 0; i < roomCount; i++) {
+            let z = -i * roomSize - 40;
+            // Interior Corridor logic
+            createWall(-20, 10, z - 30, 10, 20, 20);
+            createWall(-20, 10, z + 30, 10, 20, 20);
+            createWall(-20, 18, z, 10, 4, 40);
+            createWall(20, 10, z - 30, 10, 20, 20);
+            createWall(20, 10, z + 30, 10, 20, 20);
+            createWall(20, 18, z, 10, 4, 40);
+            createWall(50, 10, z - 40, 65, 20, 5);
+            createWall(-50, 10, z - 40, 65, 20, 5);
+
+            // Spawn the Red Door ON TOP of the wall
+            if (i === exitIdx) {
+                const doorGroup = new THREE.Group();
+                const door = new THREE.Mesh(new THREE.PlaneGeometry(12, 18), new THREE.MeshBasicMaterial({color: 0xff0000, side: THREE.DoubleSide}));
+                const doorLight = new THREE.PointLight(0xff0000, 60, 100);
+                doorGroup.add(door);
+                doorGroup.add(doorLight);
+                
+                // Positioned at 79.9 or -79.9 so it sits slightly in front of the 85-unit wall
+                // This ensures it is visible and not "inside" the wall geometry
+                doorGroup.position.set(exitSide * 79.9, 9, z);
+                doorGroup.rotation.y = Math.PI/2;
+                doorGroup.name = "EXIT";
+                scene.add(doorGroup);
+            }
+        }
+
+        const widow = new THREE.Group();
+        widow.add(new THREE.Mesh(new THREE.CapsuleGeometry(2.5, 12, 4, 8), new THREE.MeshBasicMaterial({color: 0xffffff})));
+        widow.add(new THREE.Mesh(new THREE.BoxGeometry(6, 18, 6), new THREE.MeshBasicMaterial({color: 0x000000, wireframe: true})));
+        widow.position.set(0, 9, -200);
+        scene.add(widow);
+
+        let patrolDirection = -1;
+        scene.add(new THREE.AmbientLight(0xffffff, 0.05));
+        const playerLight = new THREE.PointLight(0xffffff, 80, 400);
+        camera.add(playerLight);
+        scene.add(camera);
+
+        camera.position.set(0, 10, -15);
+        let yaw = 0, pitch = 0, isEnding = false;
+        const keys = {};
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement && !isEnding) {
+                yaw -= e.movementX * 0.002; pitch -= e.movementY * 0.002;
+                camera.rotation.set(Math.max(-1.5, Math.min(1.5, pitch)), yaw, 0, 'YXZ');
+            }
+        });
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+            
+            if (move.length() > 0) {
+                move.applyQuaternion(camera.quaternion); move.y = 0;
+                let speed = (keys.ShiftLeft) ? 1.4 : 0.7;
+                move.normalize().multiplyScalar(speed);
+                
+                const nextX = new THREE.Vector3(move.x, 0, 0);
+                const nextZ = new THREE.Vector3(0, 0, move.z);
+                
+                camera.position.add(nextX);
+                let pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(4, 10, 4));
+                for(let wall of walls) if(pBox.intersectsBox(wall)) camera.position.sub(nextX);
+                
+                camera.position.add(nextZ);
+                pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(4, 10, 4));
+                for(let wall of walls) if(pBox.intersectsBox(wall)) camera.position.sub(nextZ);
+            }
+
+            const inHallway = Math.abs(camera.position.x) < 20;
+            const dist = camera.position.distanceTo(widow.position);
+
+            if (inHallway && dist < 250) {
+                const dir = new THREE.Vector3().subVectors(camera.position, widow.position).normalize();
+                widow.position.add(dir.multiplyScalar(0.95));
+                widow.lookAt(camera.position.x, 9, camera.position.z);
+            } else {
+                widow.position.z += 0.4 * patrolDirection;
+                if (widow.position.z < -totalDepth + 50) patrolDirection = 1;
+                if (widow.position.z > -50) patrolDirection = -1;
+                widow.lookAt(0, 9, widow.position.z + patrolDirection);
+            }
+
+            if (dist < 10 && inHallway) {
+                isEnding = true;
+                document.getElementById('overlay').style.display = 'flex';
+                document.getElementById('overlay').innerText = "THE WIDOW FOUND YOU.";
+                setTimeout(() => location.reload(), 2000);
+            }
+
+            const exit = scene.getObjectByName("EXIT");
+            // Check proximity to trigger level change
+            if (exit && camera.position.distanceTo(exit.position) < 12) {
+                window.location.href = "level14.html";
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

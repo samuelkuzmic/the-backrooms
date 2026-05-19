@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 32 - Forest of Skeletons</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #888; z-index: 10; font-size: 1.1rem; 
+            pointer-events: none; font-weight: bold; text-shadow: 2px 2px #000;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 4rem; z-index: 100; color: #fff; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 32: THE GREAT BONE FOREST<br>FIND THE STONE ARCH</div>
+    <div id="death">SHATTERED</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0a);
+        scene.fog = new THREE.Fog(0x0a0a0a, 1, 1500);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+        const moon = new THREE.PointLight(0xeeeeee, 10000, 5000);
+        moon.position.set(0, 1500, 0);
+        scene.add(moon);
+
+        let isEnding = false;
+        const walls = [];
+        const hounds = [];
+
+        // --- MASSIVE MAP ---
+        const boxSize = 8000; // Doubled the size
+        const boxHeight = 10000;
+        const half = boxSize / 2;
+
+        const perimeter = new THREE.Mesh(
+            new THREE.BoxGeometry(boxSize, boxHeight, boxSize), 
+            new THREE.MeshStandardMaterial({ color: 0x151515, side: THREE.BackSide })
+        );
+        perimeter.position.y = 4000;
+        scene.add(perimeter);
+
+        // --- SKELETON TREES (High Density) ---
+        const treeGeo = new THREE.CylinderGeometry(12, 18, 600, 6);
+        const treeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
+        for(let i = 0; i < 500; i++) {
+            const x = (Math.random() - 0.5) * (boxSize - 500);
+            const z = (Math.random() - 0.5) * (boxSize - 500);
+            if (Math.sqrt(x*x + z*z) < 300) continue; 
+
+            const tree = new THREE.Mesh(treeGeo, treeMat);
+            tree.position.set(x, 300, z);
+            scene.add(tree);
+            walls.push({ x: x, z: z, r: 35 }); 
+        }
+
+        // --- DISTANT EXIT ARCH ---
+        const arch = new THREE.Group();
+        const stone = new THREE.MeshStandardMaterial({color: 0x020202});
+        const p1 = new THREE.Mesh(new THREE.BoxGeometry(40, 200, 40), stone);
+        const p2 = p1.clone(); p2.position.x = 150;
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(200, 40, 40), stone);
+        beam.position.set(75, 100, 0);
+        arch.add(p1, p2, beam);
+        
+        // Spawn arch far away (at least 3000 units from start)
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 3200 + Math.random() * 500;
+        const exitPos = new THREE.Vector3(Math.cos(angle) * dist, 100, Math.sin(angle) * dist);
+        arch.position.copy(exitPos);
+        scene.add(arch);
+
+        // --- SPAWN HOUND PACKS ---
+        function spawnHound(x, z) {
+            const h = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(20, 15, 50), new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true}));
+            const eyes = new THREE.Mesh(new THREE.BoxGeometry(22, 4, 4), new THREE.MeshBasicMaterial({color: 0xff0000}));
+            eyes.position.set(0, 5, -25);
+            h.add(body, eyes);
+            h.position.set(x, 25, z);
+            scene.add(h);
+            hounds.push(h);
+        }
+
+        for(let i = 0; i < 25; i++) { // 25 Hounds across the map
+            const x = (Math.random() - 0.5) * (boxSize - 1000);
+            const z = (Math.random() - 0.5) * (boxSize - 1000);
+            // Don't spawn within 1000 units of player
+            if (Math.sqrt(x*x + z*z) > 1000) {
+                spawnHound(x, z);
+            }
+        }
+
+        // --- PLAYER PHYSICS ---
+        camera.position.set(0, 45, 0);
+        const keys = {};
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isEnding) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function handleMovement() {
+            const speed = keys.ShiftLeft ? 16.0 : 8.0;
+            let moveX = 0, moveZ = 0;
+
+            if (keys.KeyW) moveZ -= 1; if (keys.KeyS) moveZ += 1;
+            if (keys.KeyA) moveX -= 1; if (keys.KeyD) moveX += 1;
+            if (moveX === 0 && moveZ === 0) return;
+
+            const inputDir = new THREE.Vector3(moveX, 0, moveZ).normalize();
+            inputDir.applyQuaternion(camera.quaternion);
+            inputDir.y = 0;
+            inputDir.normalize();
+
+            let targetX = camera.position.x + inputDir.x * speed;
+            let targetZ = camera.position.z + inputDir.z * speed;
+
+            // Smooth sliding against trees
+            for (let tree of walls) {
+                const dx = targetX - tree.x;
+                const dz = targetZ - tree.z;
+                const dsq = dx * dx + dz * dz;
+                if (dsq < tree.r * tree.r) {
+                    const dist = Math.sqrt(dsq);
+                    const overlap = tree.r - dist;
+                    targetX += (dx / dist) * overlap;
+                    targetZ += (dz / dist) * overlap;
+                }
+            }
+
+            // Box boundaries
+            if (targetX < -half + 50) targetX = -half + 50;
+            if (targetX > half - 50) targetX = half - 50;
+            if (targetZ < -half + 50) targetZ = -half + 50;
+            if (targetZ > half - 50) targetZ = half - 50;
+
+            camera.position.x = targetX;
+            camera.position.z = targetZ;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            handleMovement();
+
+            // Exit Check
+            if (camera.position.distanceTo(exitPos) < 150) {
+                isEnding = true;
+                window.location.href = "level33.html";
+            }
+
+            // Hound AI Logic
+            hounds.forEach(h => {
+                const d = h.position.distanceTo(camera.position);
+                if (d < 1200) { // Detection range
+                    const chase = new THREE.Vector3().subVectors(camera.position, h.position).normalize().multiplyScalar(5.2);
+                    h.position.add(chase);
+                    h.lookAt(camera.position.x, 25, camera.position.z);
+                }
+                if (d < 60) {
+                    isEnding = true;
+                    document.getElementById('death').style.display = 'flex';
+                    setTimeout(() => location.reload(), 2000);
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

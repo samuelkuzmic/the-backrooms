@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 46 - The Arabian Desert</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #ffe4b5; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #5c4033; z-index: 10; font-size: 1.1rem; 
+            font-weight: bold; pointer-events: none; text-shadow: 1px 1px #fff; 
+        }
+        #heat-bar-container {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 300px; height: 15px; border: 2px solid #5c4033; background: rgba(0,0,0,0.1);
+        }
+        #heat-bar { width: 0%; height: 100%; background: linear-gradient(to right, #ffcc00, #ff0000); }
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; opacity: 0; pointer-events: none; z-index: 5;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            flex-direction: column; z-index: 100; color: #fff; background: #e3c9a6;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 46: THE ARABIAN DESERT<br>FOLLOW THE UPWARD ARROWS</div>
+    <div id="heat-bar-container"><div id="heat-bar"></div></div>
+    <div id="overlay"></div>
+    <div id="death"><h1>HEAT STROKE</h1><p></p></div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffe4b5);
+        scene.fog = new THREE.Fog(0xffe4b5, 1000, 20000);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 150000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const obstacles = [];
+        const interiorZones = [];
+        const ruinPositions = [];
+        let heat = 0;
+        let isEnding = false;
+
+        const WORLD_SIZE = 100000;
+        const SPAWN_RADIUS = 50000;
+        const MIN_RUIN_GAP = 2500;
+        const OASIS_X = 50000;
+        const OASIS_Z = 50000;
+        
+        const WALK_SPEED = 4.5;
+        const SPRINT_SPEED = 9.0;
+        const PLAYER_RADIUS = 70; 
+
+        const sandMat = new THREE.MeshStandardMaterial({ color: 0xedc9af, roughness: 1 });
+        const ruinMat = new THREE.MeshStandardMaterial({ color: 0xaf8e6d, roughness: 0.9 });
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x1a4a16 });
+        const waterMat = new THREE.MeshStandardMaterial({ color: 0x0077be, emissive: 0x001a33, transparent: true, opacity: 0.9 });
+        const signMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f });
+        const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+        function getTerrainHeight(x, z) {
+            const dx = x - OASIS_X;
+            const dz = z - OASIS_Z;
+            const distToOasis = Math.sqrt(dx*dx + dz*dz);
+            let h = (Math.sin(x/5000) * Math.cos(z/5000) * 1000) + (Math.sin(x/800) * Math.cos(z/800) * 200);
+            if (distToOasis < 2000) {
+                const factor = Math.min(1, distToOasis / 1800);
+                h = THREE.MathUtils.lerp(0, h, factor);
+            }
+            return h;
+        }
+
+        function getSafeHeight(x, z) {
+            const offset = 40; 
+            const h1 = getTerrainHeight(x, z);
+            const h2 = getTerrainHeight(x + offset, z);
+            const h3 = getTerrainHeight(x - offset, z);
+            const h4 = getTerrainHeight(x, z + offset);
+            const h5 = getTerrainHeight(x, z - offset);
+            return Math.max(h1, h2, h3, h4, h5);
+        }
+
+        const floorGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.5, WORLD_SIZE * 1.5, 120, 120);
+        const verts = floorGeo.attributes.position.array;
+        for(let i = 0; i < verts.length; i += 3) {
+            verts[i+2] = getTerrainHeight(verts[i], -verts[i+1]);
+        }
+        floorGeo.computeVertexNormals();
+        const floor = new THREE.Mesh(floorGeo, sandMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        function createRuin(x, z) {
+            const h = getTerrainHeight(x, z);
+            const group = new THREE.Group();
+            const wH = 150, wW = 220, th = 35; 
+            const walls = [
+                { w: wW, h: wH, d: th, x: 0, y: wH/2, z: -wW/2 }, 
+                { w: th, h: wH, d: wW, x: -wW/2, y: wH/2, z: 0 }, 
+                { w: th, h: wH, d: wW, x: wW/2, y: wH/2, z: 0 }
+            ];
+            walls.forEach(d => {
+                const m = new THREE.Mesh(new THREE.BoxGeometry(d.w, d.h, d.d), ruinMat);
+                m.position.set(d.x, d.y, d.z);
+                group.add(m);
+                const b = new THREE.Box3().setFromObject(m).translate(new THREE.Vector3(x, h, z));
+                obstacles.push(b);
+            });
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(wW + 40, th, wW + 40), ruinMat);
+            roof.position.y = wH;
+            group.add(roof);
+            group.position.set(x, h - 5, z);
+            scene.add(group);
+            interiorZones.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, h + 80, z), new THREE.Vector3(wW - 60, 150, wW - 60)));
+        }
+
+        function createSign(x, z) {
+            const h = getTerrainHeight(x, z);
+            const group = new THREE.Group();
+            
+            // Post shifted behind the board
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 120), signMat);
+            post.position.set(0, 60, -6); 
+            group.add(post);
+
+            // Board
+            const board = new THREE.Mesh(new THREE.BoxGeometry(80, 50, 4), signMat);
+            board.position.set(0, 100, 0);
+            group.add(board);
+
+            // Arrow Container
+            const arrowArt = new THREE.Group();
+            
+            // Shaft |
+            const line = new THREE.Mesh(new THREE.PlaneGeometry(8, 20), arrowMat);
+            line.position.y = -6;
+            
+            // Triangle tip /\ (Rotated 90 degrees to point UP)
+            const tip = new THREE.Mesh(new THREE.CircleGeometry(12, 3), arrowMat);
+            tip.rotation.z = Math.PI / 2; // Fixed rotation to point upward
+            tip.position.y = 12;
+            
+            arrowArt.add(line, tip);
+            arrowArt.position.set(0, 100, 2.1); // Stuck to front face
+            group.add(arrowArt);
+
+            group.position.set(x, h, z);
+            
+            // Make the sign look at the player's approach point
+            group.lookAt(0, h + 100, 0); 
+            
+            scene.add(group);
+            obstacles.push(new THREE.Box3().setFromObject(post).translate(new THREE.Vector3(x, h, z)));
+        }
+
+        const goalDir = new THREE.Vector2(OASIS_X, OASIS_Z).normalize();
+        for(let i=0; i<3; i++) {
+            const dist = 500 + (i * 1200); 
+            createSign(goalDir.x * dist, goalDir.y * dist);
+        }
+
+        // Random ruins for heat relief
+        for(let i=0; i<350; i++) {
+            let rx, rz, valid = false;
+            let att = 0;
+            while(!valid && att < 30) {
+                rx = (Math.random() - 0.5) * SPAWN_RADIUS * 2;
+                rz = (Math.random() - 0.5) * SPAWN_RADIUS * 2;
+                valid = true;
+                if(Math.sqrt(rx*rx + rz*rz) < 2500) valid = false;
+                for(let p of ruinPositions) {
+                    if(Math.sqrt((rx-p.x)**2 + (rz-p.z)**2) < MIN_RUIN_GAP) { valid = false; break; }
+                }
+                att++;
+            }
+            if(valid) { ruinPositions.push({x: rx, z: rz}); createRuin(rx, rz); }
+        }
+
+        const oasis = new THREE.Group();
+        const lake = new THREE.Mesh(new THREE.CircleGeometry(800, 32), waterMat);
+        lake.rotation.x = -Math.PI / 2;
+        lake.position.y = 10;
+        oasis.add(lake);
+        for(let i=0; i<18; i++) {
+            const angle = (i / 18) * Math.PI * 2;
+            const dist = 900 + Math.random() * 300;
+            const tx = Math.cos(angle) * dist, tz = Math.sin(angle) * dist;
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(12, 18, 500, 8), ruinMat);
+            trunk.position.set(tx, 250, tz);
+            const leaves = new THREE.Mesh(new THREE.SphereGeometry(120, 8, 8), leafMat);
+            leaves.position.set(tx, 500, tz); leaves.scale.y = 0.4;
+            oasis.add(trunk, leaves);
+            obstacles.push(new THREE.Box3().setFromObject(trunk).translate(new THREE.Vector3(OASIS_X, 0, OASIS_Z)));
+        }
+        oasis.position.set(OASIS_X, 0, OASIS_Z);
+        scene.add(oasis);
+
+        const sun = new THREE.DirectionalLight(0xffffff, 3.5);
+        sun.position.set(2000, 5000, 2000);
+        scene.add(sun, new THREE.AmbientLight(0xffe4b5, 0.4));
+
+        camera.position.set(0, 300, 0); 
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function checkCollision(pos) {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(PLAYER_RADIUS, 120, PLAYER_RADIUS));
+            for(let b of obstacles) if(playerBox.intersectsBox(b)) return true;
+            return false;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+            const speed = keys.ShiftLeft ? SPRINT_SPEED : WALK_SPEED;
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+
+            if (move.length() > 0) {
+                move.normalize().applyQuaternion(camera.quaternion);
+                move.y = 0;
+                const nextX = camera.position.clone(); nextX.x += move.x * speed;
+                if (!checkCollision(nextX)) camera.position.x = nextX.x;
+                const nextZ = camera.position.clone(); nextZ.z += move.z * speed;
+                if (!checkCollision(nextZ)) camera.position.z = nextZ.z;
+            }
+
+            const groundY = getSafeHeight(camera.position.x, camera.position.z) + 110;
+            camera.position.y = THREE.MathUtils.lerp(camera.position.y, groundY, 0.15);
+
+            let shaded = false;
+            const pPoint = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(10,10,10));
+            for(let z of interiorZones) if(z.intersectsBox(pPoint)) { shaded = true; break; }
+
+            if(shaded) heat = Math.max(0, heat - 4.5);
+            else heat += 0.07;
+
+            document.getElementById('heat-bar').style.width = heat + "%";
+            document.getElementById('overlay').style.opacity = (heat / 100) * 0.99;
+
+            if(heat >= 100) {
+                isEnding = true;
+                document.getElementById('death').style.display = 'flex';
+                setTimeout(() => location.reload(), 3000);
+            }
+
+            if(camera.position.distanceTo(new THREE.Vector3(OASIS_X, camera.position.y, OASIS_Z)) < 800) {
+                isEnding = true;
+                window.location.href = "level47.html";
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

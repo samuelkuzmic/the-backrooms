@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 34 - Sewer System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #00ff00; z-index: 10; font-size: 1.1rem; 
+            pointer-events: none; font-weight: bold; text-shadow: 2px 2px #000;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 5rem; z-index: 100; color: #ff0000; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 34: THE SEWERS<br>FIND THE LADDER | VERY GLITCHY LEVEL</div>
+    <div id="death">CAUGHT</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000000, 1, 2000);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const flashlight = new THREE.SpotLight(0xffffff, 300, 6000, 0.5, 0.2, 1);
+        scene.add(flashlight);
+        scene.add(flashlight.target);
+        scene.add(new THREE.AmbientLight(0x111111, 0.3));
+
+        let isEnding = false;
+        const safeZones = [];
+        const pipeMat = new THREE.MeshStandardMaterial({ color: 0x222222, side: THREE.BackSide, roughness: 1 });
+
+        // --- STRAIGHT PIPE (ONLY CAPS OUTER ENDS) ---
+        function addPipe(x, z, length, isVertical, capStart = false, capEnd = false) {
+            const radius = 180;
+            const geo = new THREE.CylinderGeometry(radius, radius, length, 32, 1, true);
+            const p = new THREE.Mesh(geo, pipeMat);
+            p.position.set(x, 100, z);
+            p.rotation.x = Math.PI/2;
+            if(!isVertical) p.rotation.z = Math.PI/2;
+            scene.add(p);
+
+            // Only add caps to the very start or very end of the WHOLE maze
+            if(capStart || capEnd) {
+                const capGeo = new THREE.CircleGeometry(radius, 32);
+                const capMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+                if(isVertical) {
+                    if(capStart) { const c = new THREE.Mesh(capGeo, capMat); c.position.set(x, 100, z - length/2); scene.add(c); }
+                    if(capEnd) { const c = new THREE.Mesh(capGeo, capMat); c.position.set(x, 100, z + length/2); scene.add(c); }
+                } else {
+                    if(capStart) { const c = new THREE.Mesh(capGeo, capMat); c.position.set(x - length/2, 100, z); c.rotation.y = Math.PI/2; scene.add(c); }
+                    if(capEnd) { const c = new THREE.Mesh(capGeo, capMat); c.position.set(x + length/2, 100, z); c.rotation.y = Math.PI/2; scene.add(c); }
+                }
+            }
+            safeZones.push({ type: 'rect', x1: isVertical ? x - 160 : x - length/2 - 50, x2: isVertical ? x + 160 : x + length/2 + 50, z1: isVertical ? z - length/2 - 50 : z - 160, z2: isVertical ? z + length/2 + 50 : z + 160 });
+        }
+
+        // --- VISIBLE TURNING TUBE ---
+        function addCurve(x, z, rotZ, centerX, centerZ) {
+            const radius = 180;
+            const geo = new THREE.TorusGeometry(300, radius, 20, 40, Math.PI / 2);
+            const t = new THREE.Mesh(geo, pipeMat);
+            t.position.set(x, 100, z);
+            t.rotation.x = Math.PI / 2;
+            t.rotation.z = rotZ;
+            scene.add(t);
+            safeZones.push({ type: 'circle', cx: centerX, cz: centerZ, rMin: 140, rMax: 460 });
+        }
+
+        // --- STATIC MAZE LAYOUT ---
+        addPipe(0, 0, 800, true, true, false);       // Start Pipe (Capped at very back)
+        addCurve(300, 400, Math.PI, 300, 700);       // Curve 1
+        addPipe(800, 700, 1000, false, false, false);// Hall 1
+        addCurve(1300, 1000, -Math.PI/2, 1300, 700); // Curve 2
+        addPipe(1600, 1500, 1000, true, false, false);// Hall 2
+        addCurve(1900, 2000, Math.PI, 1900, 2300);    // Curve 3
+        addPipe(2500, 2300, 1200, false, false, true); // Exit Hall (Capped at ladder)
+
+        // --- LADDER (Stuck to back wall) ---
+        const exitGroup = new THREE.Group();
+        for(let i=0; i<25; i++) {
+            const rung = new THREE.Mesh(new THREE.BoxGeometry(100, 6, 6), new THREE.MeshStandardMaterial({color: 0x443322}));
+            rung.position.y = i * 22;
+            exitGroup.add(rung);
+        }
+        exitGroup.position.set(3090, -50, 2300); // Pressed against end cap
+        exitGroup.rotation.y = -Math.PI / 2;
+        scene.add(exitGroup);
+        const exitBox = new THREE.Box3().setFromObject(exitGroup);
+
+        // --- MONSTER ---
+        const monster = new THREE.Group();
+        monster.add(new THREE.Mesh(new THREE.CapsuleGeometry(15, 35), new THREE.MeshStandardMaterial({color: 0xcc9988})));
+        monster.position.set(800, 40, 700);
+        scene.add(monster);
+
+        // --- MOVEMENT ---
+        camera.position.set(0, 65, -150); 
+        const keys = {};
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isEnding) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function isPointSafe(x, z) {
+            for(let s of safeZones) {
+                if(s.type === 'rect') {
+                    if(x >= s.x1 && x <= s.x2 && z >= s.z1 && z <= s.z2) return true;
+                } else {
+                    const d = Math.sqrt((x - s.cx)**2 + (z - s.cz)**2);
+                    if(d >= s.rMin && d <= s.rMax) return true;
+                }
+            }
+            return false;
+        }
+
+        let time = 0;
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+            time += 0.05;
+            flashlight.position.copy(camera.position);
+            const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+            flashlight.target.position.copy(camera.position.clone().add(dir));
+
+            const speed = keys.ShiftLeft ? 14.0 : 8.0;
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+            if (move.length() > 0) {
+                move.normalize().applyQuaternion(camera.quaternion);
+                move.y = 0;
+                const nX = camera.position.x + (move.x * speed);
+                const nZ = camera.position.z + (move.z * speed);
+                if (isPointSafe(nX, camera.position.z)) camera.position.x = nX;
+                if (isPointSafe(camera.position.x, nZ)) camera.position.z = nZ;
+                camera.position.y = 65 + Math.sin(time * 2.5) * 3;
+            }
+
+            if (new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(150,150,150)).intersectsBox(exitBox)) {
+                isEnding = true; window.location.href = "level35.html";
+            }
+
+            const dist = monster.position.distanceTo(camera.position);
+            monster.position.add(new THREE.Vector3().subVectors(camera.position, monster.position).normalize().multiplyScalar(3.2)); 
+            monster.lookAt(camera.position.x, 40, camera.position.z);
+            if (dist < 85) { isEnding = true; document.getElementById('death').style.display = 'flex'; setTimeout(() => location.reload(), 2000); }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

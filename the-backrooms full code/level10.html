@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The Backrooms - Level 10</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; cursor: none; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #ffefad; font-family: 'Courier New', monospace; 
+            pointer-events: none; z-index: 100; font-weight: bold;
+            text-shadow: 2px 2px #000;
+        }
+        #death {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; display: none; z-index: 1000;
+            color: #f00; font-family: 'Courier New', monospace;
+            align-items: center; justify-content: center; font-size: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 10 - FIELD OF WHEAT<br>LOOK FOR THE WINDMILL</div>
+    <div id="death">CAUGHT IN THE WHEAT</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x4a4329); 
+        scene.fog = new THREE.Fog(0x4a4329, 1, 350);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2500);
+        camera.rotation.order = 'YXZ'; 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const entities = [];
+        let isDead = false;
+
+        scene.add(new THREE.AmbientLight(0xfff5cc, 0.4));
+        
+        // --- YELLOW-GREEN MUDDY FLOOR ---
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(5000, 5000), 
+            new THREE.MeshStandardMaterial({ color: 0x5c5c1d }) 
+        );
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // --- PERFORMANCE WHEAT ---
+        const wheatCount = 30000;
+        const wheatGeo = new THREE.CylinderGeometry(0.06, 0.06, 8, 3);
+        const wheatMat = new THREE.MeshBasicMaterial({ color: 0xc4a037 });
+        const instancedWheat = new THREE.InstancedMesh(wheatGeo, wheatMat, wheatCount);
+        const dummy = new THREE.Object3D();
+        for (let i = 0; i < wheatCount; i++) {
+            dummy.position.set(Math.random() * 2400 - 1200, 4, Math.random() * 2400 - 1200);
+            dummy.rotation.z = (Math.random() - 0.5) * 0.4;
+            dummy.updateMatrix();
+            instancedWheat.setMatrixAt(i, dummy.matrix);
+        }
+        scene.add(instancedWheat);
+
+        // --- THE WINDMILL ---
+        const windmill = new THREE.Group();
+        const tower = new THREE.Mesh(new THREE.CylinderGeometry(15, 20, 110, 6), new THREE.MeshStandardMaterial({color: 0x050505}));
+        windmill.add(tower);
+        const blades = new THREE.Mesh(new THREE.BoxGeometry(80, 8, 2), new THREE.MeshStandardMaterial({color: 0x000}));
+        blades.position.set(0, 45, 15);
+        windmill.add(blades);
+
+        // Randomly place windmill far away
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 950;
+        windmill.position.set(Math.cos(angle) * dist, 55, Math.sin(angle) * dist); 
+        scene.add(windmill);
+
+        // --- MONSTERS ---
+        for (let i = 0; i < 35; i++) {
+            const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 8, 4), new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true}));
+            m.position.set(Math.random() * 1600 - 800, 4, Math.random() * 1600 - 800);
+            scene.add(m);
+            entities.push(m);
+        }
+
+        camera.position.set(0, 7, 0);
+        let yaw = 0, pitch = 0;
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-1.5, Math.min(1.5, pitch));
+                camera.rotation.set(pitch, yaw, 0);
+            }
+        });
+        const keys = {};
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isDead) return;
+
+            blades.rotation.z += 0.012;
+
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+            
+            const isMoving = move.length() > 0;
+            const speed = keys.ShiftLeft ? 1.1 : 0.45;
+
+            if (isMoving) {
+                move.applyQuaternion(camera.quaternion);
+                move.y = 0;
+                camera.position.add(move.normalize().multiplyScalar(speed));
+            }
+
+            // --- EXIT CHECK ---
+            const dToExit = camera.position.distanceTo(new THREE.Vector3(windmill.position.x, 7, windmill.position.z));
+            if (dToExit < 40) {
+                isDead = true;
+                window.location.href = "level11.html";
+            }
+
+            // --- MONSTER AI ---
+            entities.forEach(m => {
+                const d = camera.position.distanceTo(m.position);
+                if (d < 700) {
+                    const dir = new THREE.Vector3().subVectors(camera.position, m.position).normalize();
+                    const monsterMoveSpeed = isMoving ? 0.22 : 0.11; 
+                    m.position.addScaledVector(dir, monsterMoveSpeed);
+                    m.lookAt(camera.position.x, 4, camera.position.z);
+                }
+                if (d < 8) {
+                    isDead = true;
+                    document.getElementById('death').style.display = 'flex';
+                    setTimeout(() => location.reload(), 2000);
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 28 - The Infinite Plains</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a0033; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #d1b3ff; z-index: 10; font-size: 1.2rem; 
+            pointer-events: none; font-weight: bold; text-shadow: 2px 2px #000;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 3rem; z-index: 100; color: #ff00ff; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 28: THE PLAINS<br>YOU ARE FASTER, BUT ONLY IF YOU SPRINT.</div>
+    <div id="death">CAUGHT</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a0033); 
+        scene.fog = new THREE.Fog(0x1a0033, 100, 2500);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        let isEnding = false;
+        const walls = [];
+
+        // --- MASSIVE FLAT GROUND ---
+        const worldSize = 6000;
+        const groundGeo = new THREE.PlaneGeometry(worldSize, worldSize);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a2b0a, roughness: 1 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // --- BOUNDARY WALLS ---
+        function createBound(x, z, w, d) {
+            const b = new THREE.Mesh(new THREE.BoxGeometry(w, 400, d), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+            b.position.set(x, 200, z);
+            scene.add(b);
+            walls.push(new THREE.Box3().setFromObject(b));
+        }
+        createBound(0, 3000, 6000, 100);  createBound(0, -3000, 6000, 100);
+        createBound(3000, 0, 100, 6000);  createBound(-3000, 0, 100, 6000);
+
+        // --- PROPORTIONAL WHITE DOOR ---
+        function createDoor() {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 1800 + Math.random() * 800; 
+            const dx = Math.cos(angle) * dist;
+            const dz = Math.sin(angle) * dist;
+
+            const group = new THREE.Group();
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(14, 26, 3), new THREE.MeshStandardMaterial({color: 0xeeeeee}));
+            const door = new THREE.Mesh(new THREE.BoxGeometry(11, 24, 1.5), new THREE.MeshStandardMaterial({color: 0xffffff}));
+            door.position.z = 1;
+            const knob = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), new THREE.MeshStandardMaterial({color: 0xffcc00, metalness: 0.8}));
+            knob.position.set(4, 0, 2);
+            
+            group.add(frame, door, knob);
+            group.position.set(dx, 13, dz);
+            group.lookAt(0, 13, 0); 
+            return group;
+        }
+        const doorGroup = createDoor();
+        scene.add(doorGroup);
+
+        // --- THE STALKER (SPEED 9.0) ---
+        const monster = new THREE.Mesh(new THREE.CapsuleGeometry(4, 14), new THREE.MeshBasicMaterial({color: 0x000000}));
+        const mLight = new THREE.PointLight(0xff0000, 1500, 250);
+        monster.add(mLight);
+        monster.position.set(600, 11, 600);
+        scene.add(monster);
+
+        // --- LIGHTING ---
+        scene.add(new THREE.AmbientLight(0x442266, 0.8));
+        const moon = new THREE.DirectionalLight(0xffffff, 0.4);
+        moon.position.set(1000, 1000, 1000);
+        scene.add(moon);
+
+        camera.position.set(0, 15, 0);
+        const keys = {};
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isEnding) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function checkCollision(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(10, 10, 10));
+            for(let wall of walls) if(pBox.intersectsBox(wall)) return true;
+            return false;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            // Movement Logic
+            const dir = new THREE.Vector3();
+            if (keys.KeyW) dir.z -= 1; if (keys.KeyS) dir.z += 1;
+            if (keys.KeyA) dir.x -= 1; if (keys.KeyD) dir.x += 1;
+            
+            if (dir.length() > 0) {
+                dir.applyQuaternion(camera.quaternion);
+                dir.y = 0; 
+                // PLAYER SPEEDS: SPRINT = 10.0, WALK = 4.5
+                dir.normalize().multiplyScalar(keys.ShiftLeft ? 10.0 : 4.5);
+                
+                const testX = camera.position.clone().add(new THREE.Vector3(dir.x, 0, 0));
+                if (!checkCollision(testX)) camera.position.x = testX.x;
+                
+                const testZ = camera.position.clone().add(new THREE.Vector3(0, 0, dir.z));
+                if (!checkCollision(testZ)) camera.position.z = testZ.z;
+            }
+
+            // EXIT CHECK
+            if (camera.position.distanceTo(doorGroup.position) < 22) {
+                isEnding = true;
+                window.location.href = "level29.html";
+            }
+
+            // MONSTER AI (SPEED = 9.0)
+            const mDist = monster.position.distanceTo(camera.position);
+            if (mDist < 3500) {
+                const mMove = new THREE.Vector3().subVectors(camera.position, monster.position).normalize().multiplyScalar(9.0);
+                monster.position.add(mMove);
+                monster.lookAt(camera.position.x, 11, camera.position.z);
+            }
+            if (mDist < 20) {
+                isEnding = true;
+                document.getElementById('death').style.display = 'flex';
+                setTimeout(() => location.reload(), 2000);
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 31 - The Roller Rink</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #ff00ff; z-index: 10; font-size: 1.2rem; 
+            pointer-events: none; font-weight: bold; text-shadow: 2px 2px #000;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 5rem; z-index: 100; color: #ff0000; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 31: THE COSMIC RINK<br>EXIT THE RINK -> FIND THE UNMARKED DOOR</div>
+    <div id="death">CAUGHT</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050010); 
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- RETRO VIBE LIGHTING ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const pinkLight = new THREE.PointLight(0xff00ff, 1500, 1000);
+        pinkLight.position.set(400, 200, 400);
+        const tealLight = new THREE.PointLight(0x00ffff, 1500, 1000);
+        tealLight.position.set(-400, 200, -400);
+        scene.add(pinkLight, tealLight);
+
+        let isEnding = false;
+        const walls = [];
+
+        // --- THE "GOOD" CARPET (COSMIC STYLE) ---
+        const worldSize = 3000;
+        const carpetGroup = new THREE.Group();
+        
+        // Base dark purple carpet
+        const carpetBase = new THREE.Mesh(
+            new THREE.PlaneGeometry(worldSize, worldSize), 
+            new THREE.MeshStandardMaterial({ color: 0x0a001a, roughness: 1 })
+        );
+        carpetBase.rotation.x = -Math.PI / 2;
+        carpetGroup.add(carpetBase);
+
+        // Add "Neon Confetti" to carpet instead of a grid
+        for(let i = 0; i < 400; i++) {
+            const size = 2 + Math.random() * 5;
+            const confetti = new THREE.Mesh(
+                new THREE.PlaneGeometry(size, size),
+                new THREE.MeshBasicMaterial({ 
+                    color: Math.random() > 0.5 ? 0xff00ff : 0x00ffff,
+                    side: THREE.DoubleSide
+                })
+            );
+            confetti.position.set(
+                (Math.random() - 0.5) * worldSize,
+                0.6,
+                (Math.random() - 0.5) * worldSize
+            );
+            confetti.rotation.x = Math.PI / 2;
+            confetti.rotation.z = Math.random() * Math.PI;
+            carpetGroup.add(confetti);
+        }
+        scene.add(carpetGroup);
+
+        // --- THE POLISHED WOOD RINK ---
+        const rink = new THREE.Mesh(
+            new THREE.BoxGeometry(1400, 4, 1400), 
+            new THREE.MeshStandardMaterial({ color: 0x633e1a, roughness: 0.1, metalness: 0.2 })
+        );
+        rink.position.y = 2;
+        scene.add(rink);
+
+        // --- BUILDING ---
+        function addWall(x, z, w, d, h=100, color=0x151515) {
+            const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({color: color}));
+            b.position.set(x, h/2, z);
+            scene.add(b);
+            walls.push(new THREE.Box3().setFromObject(b));
+            return b;
+        }
+
+        // Outer Walls
+        addWall(0, 1500, 3000, 40, 400); addWall(0, -1500, 3000, 40, 400);
+        addWall(1500, 0, 40, 3000, 400); addWall(-1500, 0, 40, 3000, 400);
+
+        // Rink Rails with Exit Gap
+        addWall(0, -700, 1400, 10, 35, 0x00ffff); // North teal rail
+        addWall(700, 0, 10, 1400, 35, 0xff00ff);  // East pink rail
+        addWall(-700, 0, 10, 1400, 35, 0xff00ff); // West pink rail
+        // South rails with a wide exit gap in the middle
+        addWall(-450, 700, 500, 10, 35, 0x00ffff);
+        addWall(450, 700, 500, 10, 35, 0x00ffff); 
+
+        // Spaced out Arcade Machines
+        for(let i = 0; i < 8; i++) {
+            const zPos = -1000 + (i * 300);
+            const m = addWall(-1300, zPos, 50, 70, 95, 0x111111);
+            const screen = new THREE.Mesh(new THREE.PlaneGeometry(35, 25), new THREE.MeshBasicMaterial({color: 0x00ffcc}));
+            screen.position.set(25.1, 25, 0); screen.rotation.y = Math.PI/2;
+            m.add(screen);
+        }
+
+        // --- UNMARKED EXIT ---
+        const exitDoor = addWall(1485, 0, 30, 140, 180, 0x050505);
+
+        // --- ENTITY ---
+        const monster = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(6, 18), new THREE.MeshBasicMaterial({color: 0x000000}));
+        const glowHead = new THREE.Mesh(new THREE.SphereGeometry(7), new THREE.MeshBasicMaterial({color: 0xffffff}));
+        glowHead.position.y = 15;
+        monster.add(body, glowHead);
+        monster.position.set(1200, 15, 1200);
+        scene.add(monster);
+
+        // --- MOVEMENT ENGINE ---
+        camera.position.set(0, 35, 0);
+        const keys = {};
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isEnding) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function checkCollision(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(25, 25, 25));
+            for(let wall of walls) if(pBox.intersectsBox(wall)) return true;
+            return false;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const direction = new THREE.Vector3();
+            const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+            forward.y = 0; forward.normalize();
+            const right = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+            right.y = 0; right.normalize();
+
+            if(keys.KeyW) direction.add(forward);
+            if(keys.KeyS) direction.sub(forward);
+            if(keys.KeyA) direction.sub(right);
+            if(keys.KeyD) direction.add(right);
+
+            if(direction.length() > 0) {
+                direction.normalize().multiplyScalar(keys.ShiftLeft ? 13.0 : 6.5);
+                const nextX = camera.position.clone().add(new THREE.Vector3(direction.x, 0, 0));
+                if (!checkCollision(nextX)) camera.position.x = nextX.x;
+                const nextZ = camera.position.clone().add(new THREE.Vector3(0, 0, direction.z));
+                if (!checkCollision(nextZ)) camera.position.z = nextZ.z;
+            }
+
+            // Exit Check
+            if (camera.position.distanceTo(exitDoor.position) < 110) {
+                isEnding = true;
+                window.location.href = "level32.html";
+            }
+
+            // Monster
+            const mDist = monster.position.distanceTo(camera.position);
+            if (mDist < 2500) {
+                monster.position.add(new THREE.Vector3().subVectors(camera.position, monster.position).normalize().multiplyScalar(4.0));
+                monster.lookAt(camera.position.x, 15, camera.position.z);
+            }
+            if (mDist < 40) {
+                isEnding = true;
+                document.getElementById('death').style.display = 'flex';
+                setTimeout(() => location.reload(), 2000);
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

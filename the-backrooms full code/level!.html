@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level ! - Run For Your Life</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        /* GUI reset to standard size and position */
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            color: #ff0000; 
+            z-index: 10; 
+            font-weight: bold; 
+            text-shadow: 0 0 10px #ff0000;
+            pointer-events: none;
+        }
+        .gui-line { font-size: 1.5rem; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 2px; }
+        
+        #death { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; z-index: 100; color: #ff0000; background: #000; font-size: 3rem; }
+        #flash { position: fixed; top:0; left:0; width:100%; height:100%; background: #ff0000; opacity: 0; pointer-events: none; z-index: 5; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="gui-line">LEVEL ! - RUN FOR YOUR LIFE</div>
+        <div id="status" class="gui-line">!!! RUN !!!</div>
+    </div>
+    <div id="flash"></div>
+    <div id="death"><h1>CAUGHT</h1></div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x550000); 
+        scene.fog = new THREE.Fog(0x550000, 1, 1200);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 25000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const obstacles = [];
+        let isEnding = false;
+        let gameStarted = false;
+        let monstersSpawned = false;
+        
+        const HALL_WIDTH = 250; 
+        const HALL_LEN = 15000; 
+
+        // --- WORLD ---
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(HALL_WIDTH, HALL_LEN), new THREE.MeshStandardMaterial({ color: 0x330000 }));
+        floor.rotation.x = -Math.PI / 2; floor.position.z = HALL_LEN / 2;
+        scene.add(floor);
+        const ceiling = floor.clone(); ceiling.position.y = 140; ceiling.rotation.x = Math.PI / 2;
+        scene.add(ceiling);
+
+        function createWall(x, z, w, d) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, 400, d), new THREE.MeshStandardMaterial({ color: 0x880000 }));
+            m.position.set(x, 200, z); scene.add(m);
+            obstacles.push(new THREE.Box3().setFromObject(m));
+        }
+        createWall(-HALL_WIDTH/2 - 10, HALL_LEN/2, 20, HALL_LEN);
+        createWall(HALL_WIDTH/2 + 10, HALL_LEN/2, 20, HALL_LEN);
+        createWall(0, -10, HALL_WIDTH + 40, 20);
+
+        // --- OBSTACLES (SIDE SPAWNS ONLY) ---
+        for(let z = 2000; z < HALL_LEN - 1000; z += 1200) {
+            const xPos = Math.random() > 0.5 ? (HALL_WIDTH/3.5) : (-HALL_WIDTH/3.5);
+            const obs = new THREE.Mesh(new THREE.BoxGeometry(70, 60, 40), new THREE.MeshStandardMaterial({color:0x000000}));
+            obs.position.set(xPos, 30, z);
+            scene.add(obs);
+            obstacles.push(new THREE.Box3().setFromObject(obs));
+        }
+
+        // --- THE HORDE ---
+        const hordeGroup = new THREE.Group();
+        const eyeGeo = new THREE.SphereGeometry(5, 6, 6);
+        const eyeMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+
+        for(let i=0; i<15; i++) {
+            const h = Math.random() > 0.5 ? 240 : 160;
+            const ent = new THREE.Mesh(new THREE.BoxGeometry(25, h, 20), new THREE.MeshBasicMaterial({color: 0x000000}));
+            ent.position.set((Math.random()-0.5)*HALL_WIDTH, h/2, 10);
+            const e1 = new THREE.Mesh(eyeGeo, eyeMat); const e2 = new THREE.Mesh(eyeGeo, eyeMat);
+            e1.position.set(-8, h/2 + 15, 11); e2.position.set(8, h/2 + 15, 11);
+            ent.add(e1, e2);
+            hordeGroup.add(ent);
+        }
+        hordeGroup.position.set(0, 0, -200);
+
+        const ambient = new THREE.AmbientLight(0xff0000, 2.0);
+        scene.add(ambient);
+        const pLight = new THREE.PointLight(0xff0000, 4000, 1200);
+        scene.add(pLight);
+
+        const exit = new THREE.Mesh(new THREE.PlaneGeometry(160, 180), new THREE.MeshBasicMaterial({color: 0x00ff00}));
+        exit.position.set(0, 90, HALL_LEN - 20);
+        scene.add(exit);
+
+        camera.position.set(0, 75, 100);
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => {
+            keys[e.code] = true;
+            if(!gameStarted && ['KeyW','KeyA','KeyS','KeyD'].includes(e.code)) {
+                gameStarted = true;
+                setTimeout(() => { monstersSpawned = true; scene.add(hordeGroup); }, 2000);
+            }
+        };
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.003;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.003));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function moveWithPhysics(vel) {
+            const r = 25;
+            let wanted = camera.position.clone().add(vel);
+            let pBox = new THREE.Box3().setFromCenterAndSize(wanted, new THREE.Vector3(r*2, 100, r*2));
+            let hit = false;
+            for(let b of obstacles) { if(pBox.intersectsBox(b)) { hit = true; break; } }
+            if(!hit) { camera.position.copy(wanted); }
+            else {
+                let xOnly = camera.position.clone(); xOnly.x += vel.x;
+                let xBox = new THREE.Box3().setFromCenterAndSize(xOnly, new THREE.Vector3(r*2, 100, r*2));
+                let xHit = false;
+                for(let b of obstacles) if(xBox.intersectsBox(b)) xHit = true;
+                if(!xHit) camera.position.x = xOnly.x;
+                let zOnly = camera.position.clone(); zOnly.z += vel.z;
+                let zBox = new THREE.Box3().setFromCenterAndSize(zOnly, new THREE.Vector3(r*2, 100, r*2));
+                let zHit = false;
+                for(let b of obstacles) if(zBox.intersectsBox(b)) zHit = true;
+                if(!zHit) camera.position.z = zOnly.z;
+            }
+        }
+
+        let time = 0;
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+            time += 0.05;
+
+            if (gameStarted) {
+                const f = Math.sin(time * 2);
+                document.getElementById('flash').style.opacity = f > 0.4 ? "0.4" : "0";
+                pLight.intensity = f > 0.4 ? 5000 : 1500;
+                
+                const speed = keys.ShiftLeft ? 23 : 11;
+                const input = new THREE.Vector3();
+                if(keys.KeyW) input.z -= 1; if(keys.KeyS) input.z += 1;
+                if(keys.KeyA) input.x -= 1; if(keys.KeyD) input.x += 1;
+
+                if(input.length() > 0) {
+                    input.normalize().applyQuaternion(camera.quaternion);
+                    input.y = 0;
+                    moveWithPhysics(input.multiplyScalar(speed));
+                }
+
+                if (monstersSpawned) {
+                    hordeGroup.position.z += 23; 
+                    if (hordeGroup.position.z > camera.position.z - 30) {
+                        isEnding = true;
+                        document.getElementById('death').style.display = 'flex';
+                        setTimeout(() => location.reload(), 2000);
+                    }
+                }
+                if (camera.position.z > HALL_LEN - 100) {
+                    isEnding = true;
+                    window.location.href = "level9223372036854775807.html";
+                }
+            }
+            pLight.position.copy(camera.position);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

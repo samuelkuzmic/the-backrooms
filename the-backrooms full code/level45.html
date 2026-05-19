@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 45 - Abyss Inc.</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000205; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #00f2ff; z-index: 10; font-size: 1.1rem; 
+            pointer-events: none; text-shadow: 2px 2px #000; 
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 3rem; z-index: 100; color: #00d4ff; background: #000;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 45: ABYSS INC.<br>WATCH THE WINDOWS. FIND THE DESERT EXIT.</div>
+    <div id="death">THROUGH THE WINDOW<br><span style="font-size: 1rem;"></span></div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000205); 
+        scene.fog = new THREE.Fog(0x000205, 10, 1000);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const obstacles = [];
+        const windowEntities = [];
+        let isEnding = false;
+
+        // --- MATERIALS ---
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, metalness: 0.8, roughness: 0.1 });
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 });
+        const entityWindowMat = new THREE.MeshBasicMaterial({ color: 0x00f2ff });
+
+        // --- WORLD BOUNDARIES ---
+        const AREA_SIZE = 1400;
+        const WALL_HEIGHT = 1000;
+
+        // Floor
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(AREA_SIZE, AREA_SIZE), floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const grid = new THREE.GridHelper(AREA_SIZE, 60, 0x004466, 0x001122);
+        grid.position.y = 0.2;
+        scene.add(grid);
+
+        function createWall(w, h, d, x, y, z) {
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            wall.position.set(x, y, z);
+            scene.add(wall);
+            obstacles.push(new THREE.Box3().setFromObject(wall));
+        }
+
+        // Boxing the district in
+        createWall(AREA_SIZE, WALL_HEIGHT, 20, 0, WALL_HEIGHT/2, AREA_SIZE/2); 
+        createWall(AREA_SIZE, WALL_HEIGHT, 20, 0, WALL_HEIGHT/2, -AREA_SIZE/2); 
+        createWall(20, WALL_HEIGHT, AREA_SIZE, AREA_SIZE/2, WALL_HEIGHT/2, 0); 
+        createWall(20, WALL_HEIGHT, AREA_SIZE, -AREA_SIZE/2, WALL_HEIGHT/2, 0); 
+
+        // --- SKYSCRAPERS & WINDOW ENTITIES ---
+        function createSkyscraper(w, h, d, x, z) {
+            const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            body.position.set(x, h/2, z);
+            scene.add(body);
+            obstacles.push(new THREE.Box3().setFromObject(body));
+
+            // Windows (Lethal Entities in Level 45)
+            for(let i=0; i<15; i++) {
+                const win = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), entityWindowMat);
+                const side = Math.floor(Math.random() * 4);
+                const rh = Math.random() * 60 + 5; // Keep them low near player
+                
+                if(side === 0) win.position.set(x + w/2 + 0.5, rh, z + (Math.random()-0.5)*d);
+                if(side === 1) win.position.set(x - w/2 - 0.5, rh, z + (Math.random()-0.5)*d);
+                if(side === 2) win.position.set(x + (Math.random()-0.5)*w, rh, z + d/2 + 0.5);
+                if(side === 3) win.position.set(x + (Math.random()-0.5)*w, rh, z - d/2 - 0.5);
+                
+                win.rotation.y = (side < 2) ? Math.PI/2 : 0;
+                scene.add(win);
+                windowEntities.push(win);
+            }
+        }
+
+        for(let i=0; i<35; i++) {
+            const rx = (Math.random()-0.5)*(AREA_SIZE-250);
+            const rz = (Math.random()-0.5)*(AREA_SIZE-250);
+            if(Math.abs(rx) > 150 || Math.abs(rz) > 150) {
+                createSkyscraper(70, 400 + Math.random()*400, 70, rx, rz);
+            }
+        }
+
+        // --- LIGHTING ---
+        scene.add(new THREE.AmbientLight(0x002244, 1.2));
+        const overhead = new THREE.DirectionalLight(0x00f2ff, 0.5);
+        overhead.position.set(0, 500, 0);
+        scene.add(overhead);
+
+        // --- EXIT ---
+        const exitPlatform = new THREE.Mesh(new THREE.BoxGeometry(120, 5, 120), new THREE.MeshStandardMaterial({color: 0xe3c9a6}));
+        exitPlatform.position.set(550, 2.5, 550);
+        scene.add(exitPlatform);
+
+        const exitDoor = new THREE.Mesh(new THREE.BoxGeometry(18, 28, 4), new THREE.MeshStandardMaterial({color: 0x000000, emissive: 0x00f2ff}));
+        exitDoor.position.set(550, 18, 550);
+        scene.add(exitDoor);
+
+        // --- CONTROLS ---
+        camera.position.set(0, 15, 0);
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        // Collision Check Logic
+        function isColliding(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(8, 15, 8));
+            for(let box of obstacles) if(pBox.intersectsBox(box)) return true;
+            return false;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const speed = keys.ShiftLeft ? 1.6 : 0.8;
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+
+            if (move.length() > 0) {
+                move.normalize().applyQuaternion(camera.quaternion);
+                move.y = 0;
+
+                // --- WALL SLIDING LOGIC ---
+                // Check X movement separately
+                const nextX = camera.position.clone();
+                nextX.x += move.x * speed;
+                if (!isColliding(nextX)) {
+                    camera.position.x = nextX.x;
+                }
+
+                // Check Z movement separately
+                const nextZ = camera.position.clone();
+                nextZ.z += move.z * speed;
+                if (!isColliding(nextZ)) {
+                    camera.position.z = nextZ.z;
+                }
+            }
+
+            camera.position.y = 15;
+
+            // Check if Windows (Entities) touch player
+            windowEntities.forEach(w => {
+                if(camera.position.distanceTo(w.position) < 12) {
+                    isEnding = true;
+                    document.getElementById('death').style.display = 'flex';
+                    setTimeout(() => location.reload(), 3000);
+                }
+            });
+
+            // Exit Check
+            if(camera.position.distanceTo(exitDoor.position) < 35) {
+                isEnding = true;
+                window.location.href = "level46.html";
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

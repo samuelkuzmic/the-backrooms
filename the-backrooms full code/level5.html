@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Backrooms - Level 5</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; cursor: none; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #ffffff; font-family: 'Times New Roman', serif; 
+            pointer-events: none; z-index: 100; font-weight: bold;
+            text-shadow: 2px 2px 2px #000;
+        }
+        #death-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #1a0808; display: none; z-index: 1000;
+            color: #ff0000; font-family: 'Times New Roman', serif;
+            align-items: center; justify-content: center;
+            font-size: 3rem; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 5: THE TERROR HOTEL<br>FIND THE BOX | BEWARE THE MOTHS</div>
+    <div id="death-screen">INFESTED</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a0808);
+        scene.fog = new THREE.Fog(0x1a0808, 0.1, 45); 
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const collidables = [];
+        let exitBox = null;
+        let isDead = false;
+
+        const woodMat = new THREE.MeshLambertMaterial({ color: 0x3d1c10 }); 
+        const carpetMat = new THREE.MeshLambertMaterial({ color: 0x4a0000 }); 
+        const wallMat = new THREE.MeshLambertMaterial({ color: 0x4d3b2b }); 
+        const sheetMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee }); 
+        const mothMat = new THREE.MeshBasicMaterial({ color: 0x111111, wireframe: true });
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const headLight = new THREE.PointLight(0xffd4aa, 15, 25); 
+        scene.add(headLight);
+
+        function addWall(w, h, d, x, y, z) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            m.position.set(x, y, z);
+            scene.add(m);
+            collidables.push(new THREE.Box3().setFromObject(m));
+        }
+
+        const desk = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1, 1), woodMat);
+        desk.position.set(0, 0.5, 2);
+        scene.add(desk);
+        collidables.push(new THREE.Box3().setFromObject(desk));
+
+        const roomCount = 8;
+        const exitRoomIndex = Math.floor(Math.random() * roomCount);
+        const hallZ = roomCount * 12;
+
+        addWall(40, 6, 1, 0, 3, 5); 
+        addWall(40, 6, 1, 0, 3, -hallZ - 5);
+        
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, hallZ + 40), carpetMat);
+        floor.rotation.x = -Math.PI/2; floor.position.z = -hallZ/2; scene.add(floor);
+        const ceil = new THREE.Mesh(new THREE.PlaneGeometry(50, hallZ + 40), woodMat);
+        ceil.rotation.x = Math.PI/2; ceil.position.set(0, 5, -hallZ/2); scene.add(ceil);
+
+        for(let i = 0; i < roomCount; i++) {
+            const z = -i * 12 - 10;
+            const side = (i % 2 === 0) ? 1 : -1;
+            const rx = 10 * side; 
+
+            addWall(0.5, 5, 4, 4.5 * side, 2.5, z - 4); 
+            addWall(0.5, 5, 4, 4.5 * side, 2.5, z + 4); 
+            addWall(0.5, 2, 4, 4.5 * side, 4, z); 
+            addWall(0.5, 5, 12, -4.5 * side, 2.5, z); 
+
+            addWall(12, 5, 0.5, rx, 2.5, z - 6);
+            addWall(12, 5, 0.5, rx, 2.5, z + 6);
+            addWall(0.5, 5, 12, rx + (6 * side), 2.5, z);
+
+            const bed = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), woodMat);
+            bed.position.set(rx, 0.4, z);
+            scene.add(bed);
+            collidables.push(new THREE.Box3().setFromObject(bed));
+
+            const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 3.8), sheetMat);
+            mattress.position.set(rx, 1.0, z);
+            scene.add(mattress);
+
+            if(i === exitRoomIndex) {
+                exitBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshBasicMaterial({color: 0xffffff}));
+                exitBox.position.set(rx - (0.5 * side), 2.2, z);
+                scene.add(exitBox);
+                const glow = new THREE.PointLight(0xffffff, 10, 8);
+                glow.position.copy(exitBox.position);
+                scene.add(glow);
+            }
+        }
+
+        // --- MONSTER: THE DEATHMOTH ---
+        const mothGroup = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 1.5), mothMat);
+        const wingL = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 2), mothMat);
+        wingL.position.set(-1.8, 0, 0);
+        const wingR = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 2), mothMat);
+        wingR.position.set(1.8, 0, 0);
+        mothGroup.add(body, wingL, wingR);
+        mothGroup.position.set(0, 4.5, -hallZ); // Spawns at the end of the hall
+        scene.add(mothGroup);
+
+        function die() {
+            if (isDead) return;
+            isDead = true;
+            document.getElementById('death-screen').style.display = 'flex';
+            setTimeout(() => location.reload(), 2000);
+        }
+
+        let yaw = 0, pitch = 0;
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement && !isDead) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-1.4, Math.min(1.4, pitch));
+                camera.rotation.set(pitch, yaw, 0, 'YXZ');
+            }
+        });
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        camera.position.set(0, 1.7, 0); 
+        const pBox = new THREE.Box3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isDead) return;
+
+            if (document.pointerLockElement) {
+                const speed = keys.ShiftLeft ? 0.25 : 0.12;
+                const moveVec = new THREE.Vector3();
+                if (keys.KeyW) moveVec.z -= 1;
+                if (keys.KeyS) moveVec.z += 1;
+                if (keys.KeyA) moveVec.x -= 1;
+                if (keys.KeyD) moveVec.x += 1;
+                moveVec.applyQuaternion(camera.quaternion);
+                moveVec.y = 0;
+                moveVec.normalize().multiplyScalar(speed);
+
+                const nextX = camera.position.x + moveVec.x;
+                const nextZ = camera.position.z + moveVec.z;
+
+                camera.position.x = nextX;
+                pBox.setFromCenterAndSize(camera.position, new THREE.Vector3(0.8, 1.8, 0.8));
+                for(let box of collidables) {
+                    if(pBox.intersectsBox(box)) camera.position.x -= moveVec.x;
+                }
+
+                camera.position.z = nextZ;
+                pBox.setFromCenterAndSize(camera.position, new THREE.Vector3(0.8, 1.8, 0.8));
+                for(let box of collidables) {
+                    if(pBox.intersectsBox(box)) camera.position.z -= moveVec.z;
+                }
+
+                camera.position.y = 1.7;
+                headLight.position.copy(camera.position);
+
+                // --- DEATHMOTH AI ---
+                const distToMoth = camera.position.distanceTo(mothGroup.position);
+                if (distToMoth < 35) {
+                    const dir = new THREE.Vector3().subVectors(camera.position, mothGroup.position).normalize();
+                    mothGroup.position.x += dir.x * 0.28;
+                    mothGroup.position.z += dir.z * 0.28;
+                    // Moths dip down to head level when attacking
+                    mothGroup.position.y = THREE.MathUtils.lerp(mothGroup.position.y, 1.7, 0.05);
+                    
+                    // Wing animation
+                    wingL.rotation.z = Math.sin(Date.now() * 0.02) * 0.8;
+                    wingR.rotation.z = -Math.sin(Date.now() * 0.02) * 0.8;
+                    
+                    // Light flicker when close
+                    if (distToMoth < 10) headLight.intensity = Math.random() > 0.8 ? 2 : 15;
+                }
+
+                if (distToMoth < 2.0) die();
+
+                if (exitBox && camera.position.distanceTo(exitBox.position) < 3.0) {
+                    window.location.href = "level6.html";
+                }
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 43 - Water World</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #00ffff; z-index: 10; font-size: 1.2rem; 
+            pointer-events: none; text-shadow: 2px 2px #000; 
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 3rem; z-index: 100; color: #f00; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 43: WATER WORLD<br>FIND THE WHITE BOX</div>
+    <div id="death">CAUGHT</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x010305);
+        scene.fog = new THREE.Fog(0x010305, 1, 700);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+        const waterMat = new THREE.MeshStandardMaterial({ color: 0x001122, transparent: true, opacity: 0.6, metalness: 0.8 });
+        
+        const walls = [];
+        const limit = 2200; 
+
+        function addWall(w, h, d, x, z, color = 0x1a1a1a) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({color}));
+            m.position.set(x, h/2, z);
+            scene.add(m);
+            const box = new THREE.Box3().setFromObject(m);
+            walls.push(box);
+        }
+
+        // --- OUTER BOUNDARY ---
+        addWall(limit*2, 250, 40, 0, limit);  
+        addWall(limit*2, 250, 40, 0, -limit); 
+        addWall(40, 250, limit*2, limit, 0);  
+        addWall(40, 250, limit*2, -limit, 0); 
+
+        // --- INTERNAL FLOODED BUILDINGS ---
+        for(let i = -10; i <= 10; i++) {
+            for(let j = -10; j <= 10; j++) {
+                if(Math.abs(i) < 2 && Math.abs(j) < 2) continue; 
+                if(Math.random() > 0.65) {
+                    const x = i * 200; const z = j * 200;
+                    addWall(100, 120, 10, x, z);
+                    addWall(10, 120, 100, x + 50, z + 50);
+                }
+            }
+        }
+
+        const water = new THREE.Mesh(new THREE.PlaneGeometry(limit*2.5, limit*2.5), waterMat);
+        water.rotation.x = -Math.PI/2; water.position.y = 12;
+        scene.add(water);
+
+        // --- MONSTERS ---
+        const monsters = [];
+        for(let i=0; i<18; i++) {
+            const m = new THREE.Mesh(new THREE.SphereGeometry(7, 8, 8), new THREE.MeshBasicMaterial({color: 0x000000}));
+            let mx, mz;
+            do {
+                mx = (Math.random()-0.5)*(limit*1.8);
+                mz = (Math.random()-0.5)*(limit*1.8);
+            } while(Math.sqrt(mx*mx + mz*mz) < 600);
+            m.position.set(mx, 8, mz);
+            scene.add(m);
+            monsters.push(m);
+        }
+
+        // --- RANDOMIZED EXIT (White Cube) ---
+        function getFarSpawn() {
+            const side = Math.random() > 0.5 ? 1 : -1;
+            return (limit - 300 - (Math.random() * 800)) * side;
+        }
+        const exitPos = new THREE.Vector3(getFarSpawn(), 25, getFarSpawn());
+        const exitBox = new THREE.Mesh(new THREE.BoxGeometry(60, 60, 60), new THREE.MeshBasicMaterial({color: 0xffffff}));
+        exitBox.position.copy(exitPos);
+        scene.add(exitBox);
+
+        // --- LIGHTING ---
+        scene.add(new THREE.AmbientLight(0x0a1020, 0.5));
+        const headlamp = new THREE.PointLight(0x00ffff, 4, 300);
+        scene.add(headlamp);
+
+        // --- CONTROLS ---
+        camera.position.set(0, 28, 0); // Steady eye level
+        const keys = {};
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function checkCollision(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(12, 20, 12));
+            for(let box of walls) if(pBox.intersectsBox(box)) return true;
+            return false;
+        }
+
+        let isEnding = false;
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const speed = keys.ShiftLeft ? 1.1 : 0.6;
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+
+            if (move.length() > 0) {
+                move.normalize().applyQuaternion(camera.quaternion);
+                move.y = 0;
+                const nX = camera.position.clone(); nX.x += move.x * speed;
+                if (!checkCollision(nX)) camera.position.x = nX.x;
+                const nZ = camera.position.clone(); nZ.z += move.z * speed;
+                if (!checkCollision(nZ)) camera.position.z = nZ.z;
+            }
+
+            headlamp.position.copy(camera.position);
+
+            // Monster LoS Hunting
+            monsters.forEach(m => {
+                const d = m.position.distanceTo(camera.position);
+                if(d < 500) {
+                    const dir = new THREE.Vector3().subVectors(camera.position, m.position).normalize();
+                    const ray = new THREE.Raycaster(m.position, dir);
+                    const intersects = ray.intersectObjects(scene.children);
+                    
+                    // Hunt if player is visible (no walls in between)
+                    if(intersects.length > 0 && intersects[0].distance >= d - 10) {
+                        m.position.add(dir.multiplyScalar(0.45));
+                        m.position.y = 8 + Math.sin(Date.now()*0.003)*4; // Floating bob
+                    }
+                }
+                if(d < 20) {
+                    isEnding = true;
+                    document.getElementById('death').style.display = 'flex';
+                    setTimeout(() => location.reload(), 2000);
+                }
+            });
+
+            // Exit Check
+            if (camera.position.distanceTo(exitPos) < 50) {
+                isEnding = true;
+                window.location.href = "level44.html";
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

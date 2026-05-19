@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The Backrooms - Level 11</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #999; cursor: none; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #001a33; font-family: 'Courier New', monospace; 
+            pointer-events: none; z-index: 100; font-weight: bold;
+            text-shadow: 1px 1px #fff;
+        }
+        #death {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; display: none; z-index: 1000;
+            color: #f00; font-family: 'Courier New', monospace;
+            align-items: center; justify-content: center; font-size: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 11 - CITY THAT NEVER SLEEPS<br>FOLLOW THE BLACK MARKER BLOCKS</div>
+    <div id="death">CORNERED</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x999999);
+        scene.fog = new THREE.Fog(0x999999, 1, 1600);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+        camera.rotation.order = 'YXZ';
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const buildings = [];
+        const entities = [];
+        let exitTrigger = null;
+        let isDead = false;
+
+        // RANDOMIZE EXIT
+        const spawnDist = 1000 + Math.random() * 500;
+        const spawnAngle = Math.random() * Math.PI * 2;
+        const exitX = Math.cos(spawnAngle) * spawnDist;
+        const exitZ = Math.sin(spawnAngle) * spawnDist;
+        const exitVec = new THREE.Vector3(exitX, 0, exitZ);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+        sun.position.set(100, 200, 100);
+        scene.add(sun);
+
+        const concreteMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+        const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x111111 });
+        const blueWinMat = new THREE.MeshStandardMaterial({ color: 0x0044ff, emissive: 0x001133 });
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0x000000 }); 
+
+        function createBuilding(x, z, isExit) {
+            const group = new THREE.Group();
+            const h = isExit ? 5000 : 250 + Math.random() * 450;
+            const w = isExit ? 200 : 80;
+            const d = isExit ? 200 : 80;
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), isExit ? whiteMat : concreteMat);
+            body.position.y = h/2;
+            group.add(body);
+
+            const interval = isExit ? 100 : 50;
+            const winRows = Math.floor(h / interval);
+            for(let j = 0; j < winRows; j++) {
+                const win = new THREE.Mesh(new THREE.BoxGeometry(w + 3, 10, d + 3), blueWinMat);
+                win.position.y = (j * interval) + interval;
+                group.add(win);
+            }
+
+            if(isExit) {
+                const triggerGeo = new THREE.BoxGeometry(70, 70, 70);
+                exitTrigger = new THREE.Mesh(triggerGeo, new THREE.MeshBasicMaterial({color: 0x00ffff, transparent:true, opacity:0.6}));
+                exitTrigger.position.set(0, 35, 150); 
+                group.add(exitTrigger);
+                const l = new THREE.PointLight(0x00ffff, 25000, 400);
+                l.position.set(0, 35, 160);
+                group.add(l);
+            } else if (Math.random() > 0.5) {
+                // REPLACED ARROW WITH SUBTLE BLACK MARKER BLOCK
+                const marker = new THREE.Mesh(new THREE.BoxGeometry(6, 6, 6), markerMat);
+                
+                // Logic to place marker on the side facing the exit
+                const dirToExit = new THREE.Vector3().subVectors(exitVec, new THREE.Vector3(x,0,z)).normalize();
+                marker.position.set(dirToExit.x * (w/2 + 2), 15, dirToExit.z * (d/2 + 2));
+                group.add(marker);
+            }
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            buildings.push(body);
+        }
+
+        for(let x = -8; x <= 8; x++) {
+            for(let z = -8; z <= 8; z++) {
+                const px = x * 450;
+                const pz = z * 450;
+                if(Math.abs(px) < 300 && Math.abs(pz) < 300) continue; 
+                createBuilding(px, pz, false);
+            }
+        }
+        createBuilding(exitX, exitZ, true);
+
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(25000, 25000), new THREE.MeshStandardMaterial({color: 0x111111}));
+        road.rotation.x = -Math.PI/2;
+        scene.add(road);
+
+        for(let i = 0; i < 25; i++) {
+            const m = new THREE.Mesh(new THREE.CapsuleGeometry(2, 7, 4), new THREE.MeshBasicMaterial({color: 0x000000, wireframe: true}));
+            m.position.set(Math.random() * 5000 - 2500, 4, Math.random() * 5000 - 2500);
+            if(m.position.length() < 600) m.position.x += 800;
+            scene.add(m);
+            entities.push(m);
+        }
+
+        camera.position.set(0, 10, 0);
+        let yaw = 0, pitch = 0;
+        const keys = {};
+
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                camera.rotation.set(Math.max(-1.5, Math.min(1.5, pitch)), yaw, 0);
+            }
+        });
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isDead) return;
+
+            const isSprinting = keys.ShiftLeft;
+            const speed = isSprinting ? 2.5 : 1.2;
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+
+            if (move.length() > 0) {
+                move.applyQuaternion(camera.quaternion);
+                move.y = 0; move.normalize().multiplyScalar(speed);
+                
+                const oldX = camera.position.x;
+                const oldZ = camera.position.z;
+
+                camera.position.x += move.x;
+                let pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(6, 15, 6));
+                for(let b of buildings) {
+                    if(pBox.intersectsBox(new THREE.Box3().setFromObject(b))) { camera.position.x = oldX; break; }
+                }
+
+                camera.position.z += move.z;
+                pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(6, 15, 6));
+                for(let b of buildings) {
+                    if(pBox.intersectsBox(new THREE.Box3().setFromObject(b))) { camera.position.z = oldZ; break; }
+                }
+                
+                const exitWorld = new THREE.Vector3();
+                exitTrigger.getWorldPosition(exitWorld);
+                if(camera.position.distanceTo(exitWorld) < 60) window.location.href = "level12.html";
+            }
+
+            entities.forEach(m => {
+                const d = camera.position.distanceTo(m.position);
+                if (d < 220 || (isSprinting && d < 650)) {
+                    m.lookAt(camera.position.x, 4, camera.position.z);
+                    m.position.addScaledVector(new THREE.Vector3().subVectors(camera.position, m.position).normalize(), 1.7);
+                    m.material.color.setHex(0xff0000);
+                }
+                if (d < 20) {
+                    isDead = true;
+                    document.getElementById('death').style.display = 'flex';
+                    setTimeout(() => location.reload(), 2000);
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

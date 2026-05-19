@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 36 - The Terminal</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #00eeff; z-index: 10; font-size: 1.1rem; 
+            pointer-events: none; font-weight: bold; text-shadow: 2px 2px #000;
+        }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 5rem; z-index: 100; color: #ff0000; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">LEVEL 36: THE TERMINAL<br>GET TO THE BLUE DOOR</div>
+    <div id="death">CAUGHT</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        // --- THE HULL (THE ONLY WAY TO PREVENT FALLING OUT) ---
+        // This is one single giant box. We flip it so the "inside" is the floor/walls.
+        const roomSize = { w: 3000, h: 600, d: 5000 };
+        const hullGeo = new THREE.BoxGeometry(roomSize.w, roomSize.h, roomSize.d);
+        const hullMat = new THREE.MeshStandardMaterial({ 
+            color: 0xeeeeee, 
+            side: THREE.BackSide // This makes the INSIDE of the box the walkable area
+        });
+        const terminalHull = new THREE.Mesh(hullGeo, hullMat);
+        terminalHull.position.y = roomSize.h / 2;
+        scene.add(terminalHull);
+
+        // --- DECORATIVE ELEMENTS (NON-COLLIDABLE) ---
+        // Windows
+        const glassGeo = new THREE.PlaneGeometry(roomSize.d - 200, roomSize.h - 100);
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.8 });
+        const leftWindow = new THREE.Mesh(glassGeo, glassMat);
+        leftWindow.position.set(-roomSize.w/2 + 5, roomSize.h/2, 0);
+        leftWindow.rotation.y = Math.PI/2;
+        scene.add(leftWindow);
+
+        // --- THE EXIT: GATE 37 ---
+        const exitPos = new THREE.Vector3(0, 0, roomSize.d/2 - 50);
+        const gateFrame = new THREE.Mesh(new THREE.BoxGeometry(200, 400, 20), new THREE.MeshBasicMaterial({color: 0x00ccff}));
+        gateFrame.position.set(exitPos.x, 200, exitPos.z);
+        scene.add(gateFrame);
+
+        // --- ENTITY: HOUND ---
+        const hound = new THREE.Mesh(new THREE.BoxGeometry(60, 40, 100), new THREE.MeshStandardMaterial({color: 0x3d2b1f}));
+        hound.position.set(0, 20, 1000);
+        scene.add(hound);
+
+        // --- PLAYER ENGINE ---
+        camera.position.set(0, 110, -roomSize.d/2 + 200);
+        const keys = {};
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        let isEnding = false;
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const speed = keys.ShiftLeft ? 28.0 : 15.0;
+            const input = new THREE.Vector3();
+            if (keys.KeyW) input.z -= 1; if (keys.KeyS) input.z += 1;
+            if (keys.KeyA) input.x -= 1; if (keys.KeyD) input.x += 1;
+
+            if (input.length() > 0) {
+                input.normalize().applyQuaternion(camera.quaternion);
+                input.y = 0;
+                
+                // MATH-BASED BOUNDARY (Total protection from falling out)
+                const nextX = camera.position.x + input.x * speed;
+                const nextZ = camera.position.z + input.z * speed;
+
+                const limitX = (roomSize.w / 2) - 50;
+                const limitZ = (roomSize.d / 2) - 50;
+
+                if (Math.abs(nextX) < limitX) camera.position.x = nextX;
+                if (Math.abs(nextZ) < limitZ) camera.position.z = nextZ;
+            }
+            camera.position.y = 110;
+
+            // Exit Check
+            if (camera.position.distanceTo(exitPos) < 180) {
+                isEnding = true;
+                window.location.href = "level37.html";
+            }
+
+            // Hound Chase
+            const d = hound.position.distanceTo(camera.position);
+            const toPlayer = new THREE.Vector3().subVectors(camera.position, hound.position).normalize();
+            hound.position.add(toPlayer.multiplyScalar(11.0));
+            hound.lookAt(camera.position.x, 20, camera.position.z);
+            
+            if (d < 100) { 
+                isEnding = true; 
+                document.getElementById('death').style.display = 'flex'; 
+                setTimeout(() => location.reload(), 2500); 
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

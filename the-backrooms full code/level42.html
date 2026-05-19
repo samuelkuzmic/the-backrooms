@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 42 - Surreal Continuum</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Times New Roman', serif; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #ffd700; z-index: 10; font-size: 1.2rem; 
+            pointer-events: none; font-weight: bold; text-shadow: 2px 2px #000; 
+        }
+        #sanity-bar { width: 240px; height: 15px; background: #222; border: 2px solid #ffd700; margin-top: 10px; }
+        #sanity-fill { width: 100%; height: 100%; background: #b00; transition: 0.1s; }
+        #death { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 3rem; z-index: 100; color: #f00; background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        LEVEL 42: SURREAL COTINUUM<br>
+        SANITY
+        <div id="sanity-bar"><div id="sanity-fill"></div></div>
+    </div>
+    <div id="death">WENT INSANE</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x221a10);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const carpetMat = new THREE.MeshStandardMaterial({ color: 0x800000 });
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xf5f5dc });
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f });
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
+        const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc }); // Emissive for fake lights
+
+        const obstacles = [];
+        let sanity = 100;
+        let isEnding = false;
+        const roomPositions = [];
+
+        function addBox(w, h, d, x, y, z, mat, isSolid = true) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+            m.position.set(x, y, z);
+            scene.add(m);
+            if(isSolid) obstacles.push(new THREE.Box3().setFromObject(m));
+            return m;
+        }
+
+        function spawnFurniture(rx, rz) {
+            addBox(12, 4, 18, rx - 10, 2, rz - 10, woodMat); // Bed
+            addBox(11, 2, 17, rx - 10, 5, rz - 10, new THREE.MeshStandardMaterial({color: 0xffffff}));
+            addBox(8, 8, 4, rx + 12, 4, rz - 15, woodMat); // Dresser
+            addBox(10, 0.5, 8, rx + 12, 6, rz + 10, woodMat); // Desk
+        }
+
+        // --- MAP GENERATION ---
+        const hallWidth = 25;
+        const roomSize = 50;
+        const mapLength = 8; 
+
+        for (let i = -mapLength; i <= mapLength; i++) {
+            const z = i * 80;
+            
+            // 1. Hallway Walls with Doorways
+            addBox(2, 30, 30, -hallWidth, 15, z - 25, wallMat); 
+            addBox(2, 30, 30, -hallWidth, 15, z + 25, wallMat);
+            addBox(2, 10, 20, -hallWidth, 25, z, wallMat); 
+
+            addBox(2, 30, 30, hallWidth, 15, z - 25, wallMat);
+            addBox(2, 30, 30, hallWidth, 15, z + 25, wallMat);
+            addBox(2, 10, 20, hallWidth, 25, z, wallMat); 
+
+            // 2. Room Enclosures
+            addBox(roomSize, 30, 2, -hallWidth - 25, 15, z - 40, wallMat); 
+            addBox(roomSize, 30, 2, -hallWidth - 25, 15, z + 40, wallMat); 
+            addBox(2, 30, 80, -hallWidth - roomSize, 15, z, wallMat);     
+            spawnFurniture(-hallWidth - 20, z);
+            roomPositions.push(new THREE.Vector3(-hallWidth - 25, 1, z));
+
+            addBox(roomSize, 30, 2, hallWidth + 25, 15, z - 40, wallMat); 
+            addBox(roomSize, 30, 2, hallWidth + 25, 15, z + 40, wallMat); 
+            addBox(2, 30, 80, hallWidth + roomSize, 15, z, wallMat);     
+            spawnFurniture(hallWidth + 20, z);
+            roomPositions.push(new THREE.Vector3(hallWidth + 25, 1, z));
+
+            // --- FAKE CEILING LIGHTS (Hallway) ---
+            addBox(12, 0.5, 6, 0, 29.7, z, lightMat, false);
+        }
+
+        // Enclose Hallway ends
+        addBox(hallWidth*2, 30, 2, 0, 15, (mapLength*80)+40, wallMat);
+        addBox(hallWidth*2, 30, 2, 0, 15, (-mapLength*80)-40, wallMat);
+
+        // Floor & Ceiling
+        addBox(400, 1, 2000, 0, 0, 0, carpetMat, false);
+        addBox(400, 1, 2000, 0, 30, 0, wallMat, false);
+
+        // --- RANDOM EXIT SPAWN ---
+        const randomRoom = roomPositions[Math.floor(Math.random() * roomPositions.length)];
+        const elevator = addBox(15, 25, 15, randomRoom.x, 12.5, randomRoom.z, goldMat);
+        const exitLight = new THREE.PointLight(0xffd700, 80, 100);
+        exitLight.position.set(randomRoom.x, 15, randomRoom.z);
+        scene.add(exitLight);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+        // --- CONTROLS ---
+        camera.position.set(0, 14, 0);
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function checkCollision(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(7, 7, 7));
+            for(let b of obstacles) if(pBox.intersectsBox(b)) return true;
+            return false;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const speed = keys.ShiftLeft ? 1.7 : 0.95;
+            const move = new THREE.Vector3();
+            if (keys.KeyW) move.z -= 1; if (keys.KeyS) move.z += 1;
+            if (keys.KeyA) move.x -= 1; if (keys.KeyD) move.x += 1;
+
+            if (move.length() > 0) {
+                move.normalize().applyQuaternion(camera.quaternion);
+                move.y = 0;
+                const nX = camera.position.clone(); nX.x += move.x * speed;
+                if (!checkCollision(nX)) camera.position.x = nX.x;
+                const nZ = camera.position.clone(); nZ.z += move.z * speed;
+                if (!checkCollision(nZ)) camera.position.z = nZ.z;
+            }
+
+            sanity -= 0.055; // Slightly faster sanity drain
+            document.getElementById('sanity-fill').style.width = sanity + "%";
+            renderer.domElement.style.filter = `blur(${(100 - sanity) / 10}px) sepia(${(100 - sanity) / 70})`;
+
+            if (sanity <= 0) {
+                isEnding = true;
+                document.getElementById('death').style.display = 'flex';
+                setTimeout(() => location.reload(), 2000);
+            }
+
+            if (camera.position.distanceTo(elevator.position) < 20) {
+                isEnding = true;
+                window.location.href = "level43.html";
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

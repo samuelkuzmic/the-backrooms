@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Level 49 - The Trenches of Grime</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; 
+            color: #daa520; z-index: 10; font-weight: bold; 
+            text-shadow: 2px 2px #000;
+        }
+        .gui-line { font-size: 1.1rem; text-transform: uppercase; margin-bottom: 2px; letter-spacing: 1px; }
+        #death { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; z-index: 100; color: #ff0000; background: #000; font-size: 2rem; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="gui-line">LEVEL 49 - THE TRENCHES OF GRIME</div>
+        <div class="gui-line">FIND THE LADDER ON THE WALL</div>
+    </div>
+    <div id="death"><h1>STUCK</h1></div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x2a2a1a);
+        scene.fog = new THREE.Fog(0x2a2a1a, 1, 1400);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 10000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const obstacles = [];
+        const entities = [];
+        let isEnding = false;
+
+        const W = 80;  
+        const H = 110; 
+        const mat = new THREE.MeshStandardMaterial({ color: 0x1a150a });
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f });
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(15000, 15000), new THREE.MeshStandardMaterial({color: 0x050503}));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        function wall(x, z, w, d) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, H, d), mat);
+            m.position.set(x, H/2, z);
+            scene.add(m);
+            obstacles.push(new THREE.Box3().setFromObject(m));
+        }
+
+        const rows = [-400, 0, 400]; 
+        const junctions = [800, 1800, 2800]; 
+
+        rows.forEach(x => {
+            let startZ = 0;
+            junctions.forEach(jZ => {
+                let segmentLen = (jZ - W/2) - startZ;
+                wall(x - W/2 - 10, startZ + segmentLen/2, 20, segmentLen); 
+                wall(x + W/2 + 10, startZ + segmentLen/2, 20, segmentLen); 
+                startZ = jZ + W/2;
+            });
+            let lastLen = 4000 - startZ;
+            wall(x - W/2 - 10, startZ + lastLen/2, 20, lastLen);
+            wall(x + W/2 + 10, startZ + lastLen/2, 20, lastLen);
+        });
+
+        junctions.forEach(z => {
+            const spans = [[-400, 0], [0, 400]];
+            spans.forEach(span => {
+                let sStart = span[0] + W/2;
+                let sEnd = span[1] - W/2;
+                let len = sEnd - sStart;
+                wall((sStart + sEnd)/2, z - W/2 - 10, len, 20); 
+                wall((sStart + sEnd)/2, z + W/2 + 10, len, 20); 
+            });
+        });
+
+        wall(0, -10, 1500, 20); 
+        wall(0, 4010, 1500, 20); 
+        wall(-400 - W - 20, 2000, 20, 4200); 
+        wall(400 + W + 20, 2000, 20, 4200);
+
+        // --- RANDOM LADDER LOGIC ---
+        const randomX = rows[Math.floor(Math.random() * rows.length)];
+        const randomZ = 1000 + Math.random() * 2500;
+        const side = Math.random() > 0.5 ? 1 : -1; // 1 = Right wall, -1 = Left wall
+
+        const ladderGroup = new THREE.Group();
+        const railL = new THREE.Mesh(new THREE.BoxGeometry(4, H, 4), woodMat);
+        railL.position.set(-15, H/2, 0);
+        const railR = new THREE.Mesh(new THREE.BoxGeometry(4, H, 4), woodMat);
+        railR.position.set(15, H/2, 0);
+        ladderGroup.add(railL, railR);
+        for(let i=1; i<7; i++) {
+            const rung = new THREE.Mesh(new THREE.BoxGeometry(30, 3, 3), woodMat);
+            rung.position.set(0, i * (H/7), 0);
+            ladderGroup.add(rung);
+        }
+
+        // Positioning and Rotating Ladder to face the trench
+        const ladderX = randomX + (side * (W/2));
+        ladderGroup.position.set(ladderX, 0, randomZ);
+        ladderGroup.rotation.y = (side === 1) ? -Math.PI/2 : Math.PI/2;
+        scene.add(ladderGroup);
+
+        const exitTrigger = new THREE.Vector3(ladderX, 70, randomZ);
+
+        // Random Monsters (Reduced count)
+        for(let i=0; i<2; i++) {
+            const mon = new THREE.Mesh(new THREE.BoxGeometry(20, 110, 20), new THREE.MeshBasicMaterial({color: 0x000000}));
+            mon.position.set(rows[Math.floor(Math.random() * rows.length)], 55, 2500 + Math.random() * 1000);
+            scene.add(mon);
+            entities.push(mon);
+        }
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        camera.position.set(0, 70, 100); 
+
+        const keys = {};
+        document.addEventListener('mousedown', () => renderer.domElement.requestPointerLock());
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+        camera.rotation.order = 'YXZ';
+
+        function canMove(pos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(25, 80, 25));
+            for (let b of obstacles) { if (pBox.intersectsBox(b)) return false; }
+            return true;
+        }
+
+        function animate() {
+            if (isEnding) return;
+            requestAnimationFrame(animate);
+
+            const speed = keys.ShiftLeft ? 8.5 : 4.8; 
+            const move = new THREE.Vector3();
+            if(keys.KeyW) move.z -= 1; if(keys.KeyS) move.z += 1;
+            if(keys.KeyA) move.x -= 1; if(keys.KeyD) move.x += 1;
+            
+            if(move.length() > 0) {
+                move.normalize().applyQuaternion(camera.quaternion);
+                move.y = 0;
+                const nX = camera.position.clone(); nX.x += move.x * speed;
+                if(canMove(nX)) camera.position.x = nX.x;
+                const nZ = camera.position.clone(); nZ.z += move.z * speed;
+                if(canMove(nZ)) camera.position.z = nZ.z;
+            }
+
+            entities.forEach(m => {
+                const d = camera.position.distanceTo(m.position);
+                if (d < 1000) {
+                    m.lookAt(camera.position.x, 55, camera.position.z);
+                    m.position.lerp(new THREE.Vector3(camera.position.x, 55, camera.position.z), 0.008);
+                    if (d < 45) {
+                        isEnding = true;
+                        document.getElementById('death').style.display = 'flex';
+                        setTimeout(() => location.reload(), 3000);
+                    }
+                }
+            });
+
+            // LADDER TOUCH DETECTION
+            if(camera.position.distanceTo(exitTrigger) < 45) {
+                isEnding = true;
+                window.location.href = "level50.html";
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
